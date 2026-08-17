@@ -24,56 +24,70 @@ def init_supabase() -> Client:
 supabase = init_supabase()
 
 def carregar_alunos():
-    response = supabase.table("alunos").select("*").execute()
-    df = pd.DataFrame(response.data)
-    if not df.empty:
-        renames = {
-            "nome": "Nome",
-            "cpf": "CPF",
-            "data_nasc": "Data Nasc.",
-            "escola_origem": "Escola Origem",
-            "turma": "Turma",
-            "observacoes": "Observações"
-        }
-        if "endereco" in df.columns:
-            renames["endereco"] = "Endereço"
-        df = df.rename(columns=renames)
-    else:
-        df = pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações"])
-    return df
+    try:
+        response = supabase.table("alunos").select("*").execute()
+        df = pd.DataFrame(response.data)
+        if not df.empty:
+            renames = {
+                "nome": "Nome",
+                "cpf": "CPF",
+                "data_nasc": "Data Nasc.",
+                "escola_origem": "Escola Origem",
+                "turma": "Turma",
+                "observacoes": "Observações"
+            }
+            if "endereco" in df.columns:
+                renames["endereco"] = "Endereço"
+            df = df.rename(columns=renames)
+        else:
+            df = pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações"])
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar alunos: {e}")
+        return pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações"])
 
 def salvar_aluno(nome, cpf, data_nasc, escola_origem, turma, endereco, observacoes):
-    dados = {
-        "nome": nome,
-        "cpf": cpf,
-        "data_nasc": str(data_nasc),
-        "escola_origem": escola_origem,
-        "turma": turma,
-        "endereco": endereco,
-        "observacoes": observacoes
-    }
-    supabase.table("alunos").insert(dados).execute()
+    try:
+        dados = {
+            "nome": nome,
+            "cpf": cpf,
+            "data_nasc": str(data_nasc),
+            "escola_origem": escola_origem,
+            "turma": turma,
+            "endereco": endereco,
+            "observacoes": observacoes
+        }
+        supabase.table("alunos").insert(dados).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar aluno: {e}")
+        return False
 
 def salvar_alunos_em_lote(df_lote):
-    renames = {
-        "Nome": "nome",
-        "CPF": "cpf",
-        "Data Nasc.": "data_nasc",
-        "Escola Origem": "escola_origem",
-        "Turma": "turma",
-        "Observações": "observacoes"
-    }
-    if "Endereço" in df_lote.columns:
-        renames["Endereço"] = "endereco"
-    elif "Endereco" in df_lote.columns:
-        renames["Endereco"] = "endereco"
-        
-    df_lote = df_lote.rename(columns=renames)
-    if "data_nasc" in df_lote.columns:
-        df_lote["data_nasc"] = df_lote["data_nasc"].astype(str)
-        
-    registros = df_lote.fillna("").to_dict(orient="records")
-    supabase.table("alunos").insert(registros).execute()
+    try:
+        renames = {
+            "Nome": "nome",
+            "CPF": "cpf",
+            "Data Nasc.": "data_nasc",
+            "Escola Origem": "escola_origem",
+            "Turma": "turma",
+            "Observações": "observacoes"
+        }
+        if "Endereço" in df_lote.columns:
+            renames["Endereço"] = "endereco"
+        elif "Endereco" in df_lote.columns:
+            renames["Endereco"] = "endereco"
+            
+        df_lote = df_lote.rename(columns=renames)
+        if "data_nasc" in df_lote.columns:
+            df_lote["data_nasc"] = df_lote["data_nasc"].astype(str)
+            
+        registros = df_lote.fillna("").to_dict(orient="records")
+        supabase.table("alunos").insert(registros).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro na importação em lote: {e}")
+        return False
 
 def carregar_usuarios():
     try:
@@ -92,16 +106,34 @@ def carregar_usuarios():
     return pd.DataFrame(columns=["Usuario", "Senha", "Nome", "Perfil"])
 
 def salvar_usuario(usr, pwd, nome, perfil):
-    dados = {
-        "usuario": usr,
-        "senha": pwd,
-        "nome": nome,
-        "perfil": perfil
-    }
-    supabase.table("usuarios").insert(dados).execute()
+    try:
+        dados = {
+            "usuario": usr,
+            "senha": pwd,
+            "nome": nome,
+            "perfil": perfil
+        }
+        supabase.table("usuarios").insert(dados).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar usuário no banco: {e}")
+        return False
+
+def atualizar_perfil_usuario(usr, novo_perfil):
+    try:
+        supabase.table("usuarios").update({"perfil": novo_perfil}).eq("usuario", usr).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao atualizar perfil do usuário: {e}")
+        return False
 
 def remover_usuario(usr):
-    supabase.table("usuarios").delete().eq("usuario", usr).execute()
+    try:
+        supabase.table("usuarios").delete().eq("usuario", usr).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao remover usuário: {e}")
+        return False
 
 # ---------------------------------------------------------
 # ESTILIZAÇÃO CSS
@@ -177,7 +209,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Lista de Escolas
+# Lista de Escolas de Goiana
 ESCOLAS = [
     "Adélia Carneiro Pedrosa", "Arcendrino César de Albuquerque", "Capela de São Sebastião",
     "Cônego Fernando Passos", "Creche Municipal Profª Etenile Urbano Pessoa", "Diogo Dias",
@@ -204,7 +236,7 @@ def gerar_planilha_modelo():
         "Nome": ["Exemplo Nome Aluno"],
         "CPF": ["000.000.000-00"],
         "Data Nasc.": ["2015-01-01"],
-        "Escola Origem": ["Escola Municipal Dom Pedro II"],
+        "Escola Origem": ["Adélia Carneiro Pedrosa"],
         "Turma": ["1º Ano A"],
         "Endereço": ["Rua Exemplo, Nº 100, Bairro Centenário"],
         "Observações": ["Sem observações"]
@@ -232,27 +264,25 @@ if st.session_state["usuario_logado"] is None:
             btn_entrar = st.form_submit_button("🔒 Entrar no Sistema", use_container_width=True)
             
             if btn_entrar:
-                # Fallback de login master se o banco de dados estiver vazio
-                if usr_input == "admin" and pwd_input == "123":
+                df_usr = carregar_usuarios()
+                if not df_usr.empty and "Usuario" in df_usr.columns and "Senha" in df_usr.columns:
+                    match = df_usr[(df_usr["Usuario"] == usr_input) & (df_usr["Senha"] == pwd_input)]
+                    if not match.empty:
+                        st.session_state["usuario_logado"] = match.iloc[0].to_dict()
+                        st.success("Login efetuado com sucesso!")
+                        st.rerun()
+                    else:
+                        st.error("⚠️ Usuário ou senha incorretos.")
+                elif usr_input == "admin" and pwd_input == "123":
                     st.session_state["usuario_logado"] = {
                         "Usuario": "admin",
                         "Nome": "Administrador",
                         "Perfil": "Administrador"
                     }
-                    st.success("Login realizado!")
+                    st.success("Login realizado com acesso master!")
                     st.rerun()
                 else:
-                    df_usr = carregar_usuarios()
-                    if not df_usr.empty and "Usuario" in df_usr.columns and "Senha" in df_usr.columns:
-                        match = df_usr[(df_usr["Usuario"] == usr_input) & (df_usr["Senha"] == pwd_input)]
-                        if not match.empty:
-                            st.session_state["usuario_logado"] = match.iloc[0].to_dict()
-                            st.success("Login efetuado com sucesso!")
-                            st.rerun()
-                        else:
-                            st.error("⚠️ Usuário ou senha incorretos.")
-                    else:
-                        st.error("⚠️ Usuário ou senha incorretos.")
+                    st.error("⚠️ Usuário ou senha incorretos.")
 
 # ---------------------------------------------------------
 # ÁREA LOGADA DO SISTEMA
@@ -306,8 +336,8 @@ else:
             
             if btn_salvar:
                 if nome and cpf and escola_origem:
-                    salvar_aluno(nome, cpf, str(data_nasc), escola_origem, turma, endereco, observacoes)
-                    st.success(f"✅ Aluno(a) **{nome}** salvo no Supabase com sucesso!")
+                    if salvar_aluno(nome, cpf, str(data_nasc), escola_origem, turma, endereco, observacoes):
+                        st.success(f"✅ Aluno(a) **{nome}** salvo no Supabase com sucesso!")
                 else:
                     st.error("⚠️ Preencha todos os campos obrigatórios (*).")
 
@@ -364,9 +394,9 @@ else:
                     st.dataframe(df_upload, use_container_width=True)
                 
                 if st.button("🚀 Confirmar e Integrar Registros no Supabase", use_container_width=True):
-                    salvar_alunos_em_lote(df_upload)
-                    st.balloons()
-                    st.success(f"🎉 Todos os {len(df_upload)} alunos foram salvos no banco de dados Supabase!")
+                    if salvar_alunos_em_lote(df_upload):
+                        st.balloons()
+                        st.success(f"🎉 Todos os {len(df_upload)} alunos foram salvos no banco de dados Supabase!")
             except Exception as e:
                 st.error(f"❌ Erro ao processar o arquivo: {e}")
 
@@ -482,49 +512,72 @@ else:
                 )
 
     # ---------------------------------------------------------
-    # ABA 3: GESTÃO DE USUÁRIOS
+    # ABA 3: GESTÃO DE USUÁRIOS E PERMISSÕES
     # ---------------------------------------------------------
     if aba_gestao_usuarios:
         with aba_gestao_usuarios:
-            st.subheader("👥 Controle de Acessos e Usuários (Supabase)")
+            st.subheader("👥 Controle de Acessos e Perfis de Usuários")
             
-            col_novo, col_lista = st.columns([1, 1.5])
+            df_usrs_atual = carregar_usuarios()
             
+            col_novo, col_alterar, col_lista = st.columns([1, 1, 1.2], gap="large")
+            
+            # 1. CRIAR NOVO USUÁRIO
             with col_novo:
-                st.markdown("#### ➕ Cadastrar Novo Usuário")
+                st.markdown("#### ➕ Novo Usuário")
                 with st.form("form_novo_usuario", clear_on_submit=True):
                     novo_nome = st.text_input("Nome Completo *")
-                    novo_usr = st.text_input("Nome de Usuário (Login) *")
+                    novo_usr = st.text_input("Login *")
                     nova_senha = st.text_input("Senha *", type="password")
-                    novo_perfil = st.selectbox("Perfil de Acesso *", ["Usuário Comum", "Administrador"])
+                    novo_perfil = st.selectbox("Perfil *", ["Usuário Comum", "Administrador"])
                     
                     btn_cad_usr = st.form_submit_button("➕ Criar Usuário")
                     if btn_cad_usr:
                         if novo_nome and novo_usr and nova_senha:
-                            df_usrs = carregar_usuarios()
-                            if not df_usrs.empty and novo_usr in df_usrs["Usuario"].values:
-                                st.error("⚠️ Este nome de usuário já existe.")
+                            if not df_usrs_atual.empty and novo_usr in df_usrs_atual["Usuario"].values:
+                                st.error("⚠️ Este login já existe.")
                             else:
-                                salvar_usuario(novo_usr, nova_senha, novo_nome, novo_perfil)
-                                st.success(f"✅ Usuário **{novo_usr}** salvo no Supabase!")
-                                st.rerun()
+                                if salvar_usuario(novo_usr, nova_senha, novo_nome, novo_perfil):
+                                    st.success(f"✅ Usuário **{novo_usr}** criado!")
+                                    st.rerun()
                         else:
-                            st.error("⚠️ Preencha todos os campos obrigatórios.")
-            
-            with col_lista:
-                st.markdown("#### 📋 Usuários Cadastrados")
-                df_usrs_atual = carregar_usuarios()
+                            st.error("⚠️ Preencha todos os campos.")
+
+            # 2. EDITAR PERFIL DO USUÁRIO
+            with col_alterar:
+                st.markdown("#### 🔄 Alterar Perfil")
                 if not df_usrs_atual.empty:
-                    st.dataframe(df_usrs_atual[["Nome", "Usuario", "Perfil"]], use_container_width=True)
-                
-                st.markdown("#### 🗑️ Remover Usuário")
-                if not df_usrs_atual.empty:
-                    usuarios_existentes = [u for u in df_usrs_atual["Usuario"].tolist() if u != "admin"]
-                    if usuarios_existentes:
-                        usr_para_remover = st.selectbox("Selecione o usuário para remover", usuarios_existentes)
-                        if st.button("❌ Confirmar Remoção"):
-                            remover_usuario(usr_para_remover)
-                            st.success(f"Usuário **{usr_para_remover}** removido do Supabase!")
+                    usr_edit = st.selectbox("Selecione o Usuário", df_usrs_atual["Usuario"].tolist(), key="select_edit_usr")
+                    
+                    # Pega perfil atual
+                    perfil_atual = df_usrs_atual[df_usrs_atual["Usuario"] == usr_edit]["Perfil"].values[0]
+                    st.info(f"Perfil Atual: **{perfil_atual}**")
+                    
+                    novo_perfil_sel = st.selectbox("Novo Perfil", ["Usuário Comum", "Administrador"], key="select_novo_perfil")
+                    
+                    if st.button("✏️ Atualizar Perfil", use_container_width=True):
+                        if atualizar_perfil_usuario(usr_edit, novo_perfil_sel):
+                            st.success(f"Perfil de **{usr_edit}** alterado para **{novo_perfil_sel}**!")
                             st.rerun()
+                else:
+                    st.caption("Nenhum usuário disponível para edição.")
+
+            # 3. LISTAR E REMOVER USUÁRIOS
+            with col_lista:
+                st.markdown("#### 📋 Usuários Ativos")
+                if not df_usrs_atual.empty:
+                    st.dataframe(df_usrs_atual[["Nome", "Usuario", "Perfil"]], use_container_width=True, hide_index=True)
+                    
+                    st.markdown("---")
+                    st.markdown("#### 🗑️ Remover Usuário")
+                    usuarios_removiveis = [u for u in df_usrs_atual["Usuario"].tolist() if u != "admin"]
+                    if usuarios_removiveis:
+                        usr_remover = st.selectbox("Selecione para remover", usuarios_removiveis, key="select_rem_usr")
+                        if st.button("❌ Confirmar Remoção", use_container_width=True):
+                            if remover_usuario(usr_remover):
+                                st.success(f"Usuário **{usr_remover}** removido!")
+                                st.rerun()
                     else:
-                        st.caption("Nenhum usuário secundário disponível para remoção.")
+                        st.caption("Sem usuários secundários para remoção.")
+                else:
+                    st.info("Nenhum usuário cadastrado no banco.")
