@@ -10,7 +10,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Estilização CSS avançada para dar destaque aos formulários e inputs
+# Estilização CSS avançada para formulários e cards
 st.markdown("""
     <style>
     /* Fundo suave do sistema */
@@ -25,13 +25,14 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
 
-    /* Estilo do Container do Formulário de Cadastro */
-    [data-testid="stForm"] {
+    /* Estilo dos Containers dos Formulários e Blocos */
+    [data-testid="stForm"], .upload-card {
         background-color: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
+        border: 1.5px solid #cbd5e1 !important;
         border-radius: 16px !important;
-        padding: 30px !important;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02) !important;
+        padding: 25px !important;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05) !important;
+        margin-bottom: 25px !important;
     }
 
     /* Destaque dos Campos de Texto e Seleção (Inputs) */
@@ -49,8 +50,8 @@ st.markdown("""
         box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2) !important;
     }
 
-    /* Botão Salvar em Destaque Azul */
-    .stFormSubmitButton > button {
+    /* Botões em Destaque */
+    .stFormSubmitButton > button, .stButton > button {
         background-color: #4f46e5 !important;
         color: #ffffff !important;
         font-weight: 700 !important;
@@ -61,7 +62,7 @@ st.markdown("""
         transition: all 0.2s ease-in-out !important;
     }
 
-    .stFormSubmitButton > button:hover {
+    .stFormSubmitButton > button:hover, .stButton > button:hover {
         background-color: #4338ca !important;
         transform: translateY(-1px) !important;
     }
@@ -131,16 +132,17 @@ ESCOLAS = [
 
 st.title("🏫 Sistema de Gestão Escolar & Transferências")
 
-aba_cadastro, aba_importacao, aba_admin = st.tabs([
-    "📝 Novo Cadastro", 
-    "📥 Importação em Lote",
+# Estrutura com 2 abas (A Importação agora fica dentro da primeira aba)
+aba_cadastro, aba_admin = st.tabs([
+    "📝 Cadastro de Alunos", 
     "📊 Área do Administrador (Dashboard)"
 ])
 
 # ---------------------------------------------------------
-# ABA 1: NOVO CADASTRO
+# ABA 1: CADASTRO E IMPORTAÇÃO
 # ---------------------------------------------------------
 with aba_cadastro:
+    # SEÇÃO 1: Cadastro Individual
     st.subheader("📝 Cadastro Individual de Aluno")
     
     with st.form("form_cadastro", clear_on_submit=True):
@@ -168,26 +170,32 @@ with aba_cadastro:
             else:
                 st.error("⚠️ Preencha todos os campos obrigatórios (*).")
 
-# ---------------------------------------------------------
-# ABA 2: IMPORTAÇÃO EM LOTE
-# ---------------------------------------------------------
-with aba_importacao:
-    st.subheader("📥 Importação de Dados Quinzenal")
-    arquivo_enviado = st.file_uploader("Selecione o arquivo da planilha (.xlsx ou .csv)", type=["xlsx", "csv"])
+    st.markdown("---")
+
+    # SEÇÃO 2: Importação em Lote (Posicionada logo abaixo)
+    st.subheader("📥 Importação em Lote (Planilhas)")
+    
+    arquivo_enviado = st.file_uploader(
+        "Selecione o arquivo da planilha (.xlsx ou .csv)", 
+        type=["xlsx", "csv"],
+        key="uploader_lote"
+    )
+    
     if arquivo_enviado is not None:
         try:
-            df = pd.read_csv(arquivo_enviado) if arquivo_enviado.name.endswith('.csv') else pd.read_excel(arquivo_enviado)
+            df_upload = pd.read_csv(arquivo_enviado) if arquivo_enviado.name.endswith('.csv') else pd.read_excel(arquivo_enviado)
             st.success("✅ Arquivo carregado com sucesso!")
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df_upload, use_container_width=True)
+            
             if st.button("🚀 Processar e Salvar Registros"):
-                st.session_state["alunos_db"] = pd.concat([st.session_state["alunos_db"], df], ignore_index=True)
+                st.session_state["alunos_db"] = pd.concat([st.session_state["alunos_db"], df_upload], ignore_index=True)
                 st.balloons()
-                st.success(f"Total de {len(df)} registros integrados ao banco de dados!")
+                st.success(f"Total de {len(df_upload)} registros integrados ao banco de dados!")
         except Exception as e:
             st.error(f"Erro ao ler arquivo: {e}")
 
 # ---------------------------------------------------------
-# ABA 3: DASHBOARD DO ADMINISTRADOR
+# ABA 2: DASHBOARD DO ADMINISTRADOR
 # ---------------------------------------------------------
 with aba_admin:
     senha_digitada = st.text_input("Digite a senha do administrador:", type="password")
