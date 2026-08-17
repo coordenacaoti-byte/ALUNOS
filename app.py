@@ -23,6 +23,55 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
+# ---------------------------------------------------------
+# FUNÇÃO DE LOGS DE AUDITORIA (TABELA SEPARADA)
+# ---------------------------------------------------------
+def registrar_log(usuario: str, acao: str, detalhes: str = ""):
+    """Grava logs em uma tabela independente 'logs_auditoria' no Supabase"""
+    try:
+        dados_log = {
+            "usuario": usuario,
+            "acao": acao,
+            "detalhes": detalhes
+        }
+        supabase.table("logs_auditoria").insert(dados_log).execute()
+    except Exception as e:
+        st.error(f"Erro ao registrar log de auditoria: {e}")
+
+def carregar_logs():
+    """Carrega o histórico de logs gravados na tabela logs_auditoria"""
+    try:
+        response = supabase.table("logs_auditoria").select("*").order("data_hora", desc=True).execute()
+        df_logs = pd.DataFrame(response.data)
+        if not df_logs.empty:
+            renames = {
+                "usuario": "Usuário Responsável",
+                "acao": "Ação / Evento",
+                "detalhes": "Detalhes do Registro",
+                "data_hora": "Data/Hora"
+            }
+            df_logs = df_logs.rename(columns=renames)
+            if "Data/Hora" in df_logs.columns:
+                df_logs["Data/Hora"] = pd.to_datetime(df_logs["Data/Hora"], errors='coerce').dt.strftime('%d/%m/%Y %H:%M:%S')
+            cols_ordem = [c for c in ["Data/Hora", "Usuário Responsável", "Ação / Evento", "Detalhes do Registro"] if c in df_logs.columns]
+            return df_logs[cols_ordem]
+        else:
+            return pd.DataFrame(columns=["Data/Hora", "Usuário Responsável", "Ação / Evento", "Detalhes do Registro"])
+    except Exception as e:
+        return pd.DataFrame(columns=["Data/Hora", "Usuário Responsável", "Ação / Evento", "Detalhes do Registro"])
+
+def limpar_tabela_logs():
+    """Limpa o histórico de logs separadamente"""
+    try:
+        supabase.table("logs_auditoria").delete().neq("id", -1).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao limpar histórico de logs: {e}")
+        return False
+
+# ---------------------------------------------------------
+# FUNÇÕES DA BASE DE ALUNOS
+# ---------------------------------------------------------
 def carregar_alunos():
     try:
         response = supabase.table("alunos").select("*").execute()
@@ -34,27 +83,21 @@ def carregar_alunos():
                 "data_nasc": "Data Nasc.",
                 "escola_origem": "Escola Origem",
                 "turma": "Turma",
-                "observacoes": "Observações",
-                "criado_por": "Cadastrado Por",
-                "data_cadastro": "Data/Hora Cadastro"
+                "observacoes": "Observações"
             }
             if "endereco" in df.columns:
                 renames["endereco"] = "Endereço"
             df = df.rename(columns=renames)
             
-            # Formatando a data de nascimento para DD/MM/YYYY na visualização da tabela
+            # Formatando a data de nascimento para DD/MM/YYYY
             if "Data Nasc." in df.columns:
                 df["Data Nasc."] = pd.to_datetime(df["Data Nasc."], errors='coerce').dt.strftime('%d/%m/%Y')
-            
-            # Formatando a data/hora do log
-            if "Data/Hora Cadastro" in df.columns:
-                df["Data/Hora Cadastro"] = pd.to_datetime(df["Data/Hora Cadastro"], errors='coerce').dt.strftime('%d/%m/%Y %H:%M:%S')
         else:
-            df = pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações", "Cadastrado Por", "Data/Hora Cadastro"])
+            df = pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações"])
         return df
     except Exception as e:
         st.error(f"Erro ao carregar alunos: {e}")
-        return pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações", "Cadastrado Por", "Data/Hora Cadastro"])
+        return pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações"])
 
 def salvar_aluno(nome, cpf, data_nasc, escola_origem, turma, endereco, observacoes, usuario_logado):
     try:
@@ -65,10 +108,13 @@ def salvar_aluno(nome, cpf, data_nasc, escola_origem, turma, endereco, observaco
             "escola_origem": escola_origem,
             "turma": turma,
             "endereco": endereco,
-            "observacoes": observacoes,
-            "criado_por": usuario_logado
+            "observacoes": observacoes
         }
         supabase.table("alunos").insert(dados).execute()
+        
+        # Registrar Log Independente
+        detalhes = f"Aluno: {nome} | CPF: {cpf} | Escola: {escola_origem} | Turma: {turma}"
+        registrar_log(usuario_logado, "Cadastro Individual", detalhes)
         return True
     except Exception as e:
         st.error(f"Erro ao salvar aluno: {e}")
@@ -76,6 +122,7 @@ def salvar_aluno(nome, cpf, data_nasc, escola_origem, turma, endereco, observaco
 
 def salvar_alunos_em_lote(df_lote, usuario_logado):
     try:
+        total_registros = len(df_lote)
         renames = {
             "Nome": "nome",
             "CPF": "cpf",
@@ -93,25 +140,31 @@ def salvar_alunos_em_lote(df_lote, usuario_logado):
         if "data_nasc" in df_lote.columns:
             df_lote["data_nasc"] = df_lote["data_nasc"].astype(str)
             
-        # Adiciona o usuario responsável em todos os registros
-        df_lote["criado_por"] = usuario_logado
-            
         registros = df_lote.fillna("").to_dict(orient="records")
         supabase.table("alunos").insert(registros).execute()
+        
+        # Registrar Log Independente
+        registrar_log(usuario_logado, "Importação em Lote", f"Importados {total_registros} alunos via planilha.")
         return True
     except Exception as e:
         st.error(f"Erro na importação em lote: {e}")
         return False
 
-def limpar_tabela_alunos():
+def limpar_tabela_alunos(usuario_logado, quantidade_deletada):
     try:
         # Exclui todos os registros do banco de dados Supabase
         supabase.table("alunos").delete().neq("id", -1).execute()
+        
+        # Registrar Log Independente sobre a exclusão da base
+        registrar_log(usuario_logado, "Exclusão da Base de Alunos", f"A base de dados contendo {quantidade_deletada} aluno(s) foi zerada.")
         return True
     except Exception as e:
-        st.error(f"Erro ao limpar banco de dados: {e}")
+        st.error(f"Erro ao limpar banco de dados de alunos: {e}")
         return False
 
+# ---------------------------------------------------------
+# FUNÇÕES DE USUÁRIOS
+# ---------------------------------------------------------
 def carregar_usuarios():
     try:
         response = supabase.table("usuarios").select("*").execute()
@@ -531,19 +584,19 @@ else:
                     st.plotly_chart(fig_donut, use_container_width=True)
 
             st.markdown("---")
-            st.markdown("### 📋 Base de Dados Completa")
+            st.markdown("### 📋 Base de Dados Completa (Alunos)")
             
             cols_exibicao = [c for c in ["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações"] if c in df.columns]
             st.dataframe(df[cols_exibicao] if not df.empty else df, use_container_width=True)
             
-            # BOTÕES EXPORTAR E LIMPAR BASE lado a lado
+            # BOTÕES EXPORTAR E LIMPAR ALUNOS
             col_exp, col_limp, col_vazio = st.columns([1, 1, 2])
             
             with col_exp:
                 if not df.empty:
                     csv = df[cols_exibicao].to_csv(index=False).encode('utf-8')
                     st.download_button(
-                        label="📥 Exportar CSV do Supabase",
+                        label="📥 Exportar CSV dos Alunos",
                         data=csv,
                         file_name="base_alunos_supabase.csv",
                         mime="text/csv",
@@ -552,25 +605,43 @@ else:
             
             with col_limp:
                 if not df.empty:
-                    # Caixa de confirmação preventiva
-                    if st.checkbox("⚠️ Confirmar exclusão total da base"):
-                        if st.button("🗑️ Limpar Base de Dados", type="primary", use_container_width=True):
-                            if limpar_tabela_alunos():
-                                st.success("Base de dados de alunos limpa com sucesso!")
+                    if st.checkbox("⚠️ Confirmar exclusão total dos ALUNOS"):
+                        if st.button("🗑️ Limpar Base de Alunos", type="primary", use_container_width=True):
+                            usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
+                            if limpar_tabela_alunos(usuario_responsavel, len(df)):
+                                st.success("Base de dados de alunos limpa com sucesso! O histórico de logs foi mantido.")
                                 st.rerun()
 
             # ---------------------------------------------------------
-            # LOGS E HISTÓRICO DE AUDITORIA DE PREENCHIMENTO
+            # AUDITORIA E HISTÓRICO DE LOGS (SISTEMA TOTALMENTE SEPARADO)
             # ---------------------------------------------------------
             st.markdown("---")
-            st.markdown("### 🔍 Histórico de Auditoria (Logs de Preenchimento)")
-            st.caption("Acompanhe em tempo real quem criou cada registro de aluno e em qual data/horário.")
+            st.markdown("### 🛡️ Histórico e Logs de Auditoria (Sistema Independente)")
+            st.caption("Esta tabela registra todas as ações de usuários (cadastros, importações e exclusões) e PERMANECE INTACTA mesmo quando a base de alunos é zerada.")
             
-            cols_logs = [c for c in ["Nome", "CPF", "Escola Origem", "Cadastrado Por", "Data/Hora Cadastro"] if c in df.columns]
-            if not df.empty and "Cadastrado Por" in df.columns:
-                st.dataframe(df[cols_logs], use_container_width=True, hide_index=True)
-            else:
-                st.info("Nenhum registro de log encontrado até o momento.")
+            df_logs = carregar_logs()
+            st.dataframe(df_logs, use_container_width=True, hide_index=True)
+
+            col_log_exp, col_log_limp, col_log_vazio = st.columns([1, 1, 2])
+            
+            with col_log_exp:
+                if not df_logs.empty:
+                    csv_logs = df_logs.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Exportar Logs em CSV",
+                        data=csv_logs,
+                        file_name="logs_auditoria_sistema.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+
+            with col_log_limp:
+                if not df_logs.empty:
+                    if st.checkbox("⚠️ Confirmar exclusão dos LOGS"):
+                        if st.button("🗑️ Limpar Histórico de Logs", use_container_width=True):
+                            if limpar_tabela_logs():
+                                st.success("Histórico de logs zerado com sucesso!")
+                                st.rerun()
 
     # ---------------------------------------------------------
     # ABA 3: GESTÃO DE USUÁRIOS E PERMISSÕES
