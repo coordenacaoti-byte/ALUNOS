@@ -1,535 +1,153 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
-import io
+from supabase import create_client, Client
 
-# Configuração da página
-st.set_page_config(
-    page_title="Sistema de Gestão Escolar",
-    page_icon="🏫",
-    layout="wide"
-)
+# 1. Configuração da página
+st.set_page_config(page_title="Sistema de Gestão Escolar", layout="wide")
 
-# ---------------------------------------------------------
-# ESTILIZAÇÃO CSS AVANÇADA
-# ---------------------------------------------------------
-st.markdown("""
-    <style>
-    /* Fundo suave do sistema */
-    .stApp {
-        background-color: #f8fafc !important;
-        color: #0f172a !important;
-    }
+# 2. Conexão com o Supabase
+@st.cache_resource
+def init_supabase() -> Client:
+    url = st.secrets["supabase"]["SUPABASE_URL"]
+    key = st.secrets["supabase"]["SUPABASE_KEY"]
+    return create_client(url, key)
+
+supabase = init_supabase()
+
+# 3. Gerenciamento de Sessão (Login)
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.user = None
+
+# --- TELA DE LOGIN ---
+if not st.session_state.logged_in:
+    st.title("🔐 Login - Gestão Escolar")
     
-    /* Fontes e Títulos */
-    h1, h2, h3, h4, label, .stMarkdown {
-        color: #0f172a !important;
-        font-family: 'Inter', sans-serif;
-    }
-
-    /* Form e Containers */
-    [data-testid="stForm"] {
-        background-color: #ffffff !important;
-        border: 1.5px solid #cbd5e1 !important;
-        border-radius: 16px !important;
-        padding: 25px !important;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05) !important;
-        margin-bottom: 20px !important;
-    }
-
-    /* Inputs e Seleções */
-    .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea, .stDateInput input {
-        background-color: #ffffff !important;
-        border: 1.5px solid #94a3b8 !important;
-        border-radius: 8px !important;
-        color: #0f172a !important;
-        font-weight: 500 !important;
-    }
-
-    .stTextInput input:focus, .stTextArea textarea:focus {
-        border-color: #4f46e5 !important;
-        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2) !important;
-    }
-
-    /* Botões */
-    .stFormSubmitButton > button, .stButton > button, .stDownloadButton > button {
-        background-color: #4f46e5 !important;
-        color: #ffffff !important;
-        font-weight: 700 !important;
-        border: none !important;
-        border-radius: 8px !important;
-        padding: 8px 20px !important;
-        box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.3) !important;
-        transition: all 0.2s ease-in-out !important;
-    }
-
-    .stFormSubmitButton > button:hover, .stButton > button:hover, .stDownloadButton > button:hover {
-        background-color: #4338ca !important;
-        transform: translateY(-1px) !important;
-    }
-
-    /* Customização das Abas */
-    .stTabs [data-baseweb="tab-list"] {
-        background-color: #ffffff;
-        border-radius: 10px;
-        padding: 6px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #4f46e5 !important;
-        color: #ffffff !important;
-        border-radius: 8px;
-    }
-
-    /* KPI Cards */
-    .kpi-card {
-        background-color: #ffffff;
-        border-radius: 16px;
-        padding: 20px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    .kpi-title { font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
-    .kpi-value { font-size: 1.875rem; font-weight: 800; color: #0f172a; margin: 4px 0; }
-    .kpi-subtitle { font-size: 0.75rem; font-weight: 600; }
-    .kpi-icon { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
-    .icon-purple { background-color: #e0e7ff; color: #4f46e5; }
-    .icon-green { background-color: #d1fae5; color: #10b981; }
-    .icon-yellow { background-color: #fef3c7; color: #f59e0b; }
-    .icon-blue { background-color: #e0f2fe; color: #0284c7; }
-
-    /* Card Container Principal para Importação em Lote */
-    .import-card {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 16px;
-        padding: 24px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
-        margin-bottom: 12px;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .import-card:hover {
-        border-color: #cbd5e1;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.06);
-    }
-    .step-badge {
-        display: inline-block;
-        background-color: #e0e7ff;
-        color: #4f46e5;
-        font-size: 0.75rem;
-        font-weight: 700;
-        padding: 4px 10px;
-        border-radius: 20px;
-        margin-bottom: 12px;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-    }
-    .card-header-title {
-        font-size: 1.15rem;
-        font-weight: 700;
-        color: #0f172a;
-        margin-bottom: 8px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .card-description {
-        font-size: 0.875rem;
-        color: #64748b;
-        line-height: 1.5;
-        margin-bottom: 16px;
-    }
-    .info-pill {
-        background-color: #f8fafc;
-        border: 1px dashed #cbd5e1;
-        border-radius: 8px;
-        padding: 10px 14px;
-        font-size: 0.8rem;
-        color: #475569;
-        margin-bottom: 8px;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# ---------------------------------------------------------
-# ESTADOS DA SESSÃO (SESSION STATE)
-# ---------------------------------------------------------
-# Banco de dados de alunos
-if "alunos_db" not in st.session_state:
-    st.session_state["alunos_db"] = pd.DataFrame([
-        {"Nome": "Ana Silva", "CPF": "111.222.333-00", "Data Nasc.": "2015-05-10", "Escola Origem": "Escola Municipal Dom Pedro II", "Turma": "5º Ano A", "Observações": "Regular"},
-        {"Nome": "Bruno Souza", "CPF": "222.333.444-11", "Data Nasc.": "2010-08-20", "Escola Origem": "Escola Municipal Dom Pedro II", "Turma": "6º Ano B", "Observações": ""},
-        {"Nome": "Carla Santos", "CPF": "333.444.555-22", "Data Nasc.": "2018-02-15", "Escola Origem": "Escola Municipal Paulo Freire", "Turma": "4º Ano A", "Observações": ""},
-        {"Nome": "Diego Lima", "CPF": "444.555.666-33", "Data Nasc.": "2012-11-30", "Escola Origem": "Escola Municipal Monteiro Lobato", "Turma": "7º Ano C", "Observações": ""}
-    ])
-
-# Banco de dados de usuários do sistema
-if "usuarios_db" not in st.session_state:
-    st.session_state["usuarios_db"] = pd.DataFrame([
-        {"Usuario": "admin", "Senha": "123", "Nome": "Administrador", "Perfil": "Administrador"},
-        {"Usuario": "user1", "Senha": "123", "Nome": "Usuário Comum", "Perfil": "Usuário Comum"}
-    ])
-
-# Estado do Login
-if "usuario_logado" not in st.session_state:
-    st.session_state["usuario_logado"] = None
-
-ESCOLAS = [
-    "Adélia Carneiro Pedrosa", "Arcendrino César de Albuquerque", "Capela de São Sebastião",
-    "Cônego Fernando Passos", "Creche Municipal Profª Etenile Urbano Pessoa", "Diogo Dias",
-    "Dr. Araújo Filho", "Dr. Benigno Araújo", "Dr. Clóvis Fontenelle Guimarães",
-    "Dr. Ludovico Correia", "Dr. Manoel Borba", "Edith Gadelha", "Eufrásio Vilarim",
-    "Francisco Nicolau da Silva", "Heroínas de Tejucupapo", "Iracema Nogueira Rabelo",
-    "Irmã Marie Armelle Falguières", "IV Centenário", "João Carneiro de Melo",
-    "João Gonçalves de Azevedo", "José Maciel da Silva", "Lourenço de Albuquerque Gadelha (DISTRITO)",
-    "Lourenço de Albuquerque Gadelha (SEDE)", "Major Manoel Gadelha", "Manuel César de Albuquerque",
-    "Nossa Senhora das Maravilhas", "Prefeito Ângelo Jordão", "Presidente Costa e Silva",
-    "Profª. Belisana Pinto Abreu de Araújo", "Profª. Cynira Florianna dos Prazeres",
-    "Profª. Lizete Maria de Souza Rodrigues", "Profª. Mª Emília Valença da Silveira",
-    "Profª. Tarcila Coutinho Amaral", "Profª. Zilma Gemir Baracho", "Santa Maria",
-    "Santo Antônio de Pádua", "São Thomaz de Aquino", "Creche Criança Feliz",
-    "CMEI - Vereador Jose Batista dos Santos", "CMEI - Prefeito Osvaldo Rabelo Filho",
-    "CMEI - Carlos Alberto dos Santos Viegas",
-    "Centro de Atendimento de Educação Especial Professora Margarida Braga",
-    "Edjanete Maria Valença da Silveira"
-]
-
-# Função para gerar a planilha modelo de exemplo
-def gerar_planilha_modelo():
-    buffer = io.BytesIO()
-    df_modelo = pd.DataFrame({
-        "Nome": ["Exemplo Nome Aluno"],
-        "CPF": ["000.000.000-00"],
-        "Data Nasc.": ["2015-01-01"],
-        "Escola Origem": ["Escola Municipal Dom Pedro II"],
-        "Turma": ["1º Ano A"],
-        "Observações": ["Sem observações"]
-    })
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df_modelo.to_excel(writer, index=False, sheet_name='Modelo_Importacao')
-    return buffer.getvalue()
-
-# ---------------------------------------------------------
-# TELA DE ACESSO (LOGIN)
-# ---------------------------------------------------------
-if st.session_state["usuario_logado"] is None:
-    col_logo, col_login, col_espaco = st.columns([1, 1.5, 1])
-    with col_login:
-        st.markdown("<h2 style='text-align: center;'>🏫 Sistema de Gestão Escolar</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #64748b;'>Acesse com suas credenciais para continuar</p>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        usuario_input = st.text_input("Usuário")
+        senha_input = st.text_input("Senha", type="password")
         
-        with st.form("form_login"):
-            usr_input = st.text_input("Usuário")
-            pwd_input = st.text_input("Senha", type="password")
-            btn_entrar = st.form_submit_button("🔒 Entrar no Sistema", use_container_width=True)
-            
-            if btn_entrar:
-                df_usr = st.session_state["usuarios_db"]
-                match = df_usr[(df_usr["Usuario"] == usr_input) & (df_usr["Senha"] == pwd_input)]
-                
-                if not match.empty:
-                    st.session_state["usuario_logado"] = match.iloc[0].to_dict()
-                    st.success("Login efetuado com sucesso!")
-                    st.rerun()
-                else:
-                    st.error("⚠️ Usuário ou senha incorretos.")
+        if st.button("Entrar", use_container_width=True):
+            response = supabase.table("usuarios").select("*").eq("usuario", usuario_input).eq("senha", senha_input).execute()
+            if response.data:
+                st.session_state.logged_in = True
+                st.session_state.user = response.data[0]
+                st.success("Login realizado com sucesso!")
+                st.rerun()
+            else:
+                st.error("Usuário ou senha incorretos.")
 
-# ---------------------------------------------------------
-# ÁREA LOGADA DO SISTEMA
-# ---------------------------------------------------------
+# --- SISTEMA APÓS LOGIN ---
 else:
-    # Barra Superior com Perfil
-    usr = st.session_state["usuario_logado"]
-    col_title, col_user = st.columns([3, 1])
+    user = st.session_state.user
+    st.sidebar.title(f"Bem-vindo, {user['nome']}")
+    st.sidebar.caption(f"Perfil: {user['perfil']}")
     
-    with col_title:
-        st.title("🏫 Sistema de Gestão Escolar & Transferências")
-    with col_user:
-        st.write(f"👤 **{usr['Nome']}**")
-        st.caption(f"Perfil: {usr['Perfil']}")
-        if st.button("🚪 Sair", key="btn_logout"):
-            st.session_state["usuario_logado"] = None
-            st.rerun()
+    if st.sidebar.button("Sair"):
+        st.session_state.logged_in = False
+        st.session_state.user = None
+        st.rerun()
 
-    # Definição das Abas conforme o Perfil
-    if usr["Perfil"] == "Administrador":
-        aba_cadastro, aba_admin, aba_gestao_usuarios = st.tabs([
-            "📝 Cadastro de Alunos", 
-            "📊 Área do Administrador (Dashboard)",
-            "👥 Gestão de Usuários"
-        ])
-    else:
-        aba_cadastro, = st.tabs(["📝 Cadastro de Alunos"])
-        aba_admin = None
-        aba_gestao_usuarios = None
+    menu = st.sidebar.radio("Navegação", ["Dashboard", "Cadastrar Aluno", "Importar Planilha", "Listar Alunos"])
 
-    # ---------------------------------------------------------
-    # ABA 1: CADASTRO E IMPORTAÇÃO
-    # ---------------------------------------------------------
-    with aba_cadastro:
-        st.subheader("📝 Cadastro Individual de Aluno")
+    # --- DASHBOARD ---
+    if menu == "Dashboard":
+        st.title("📊 Dashboard")
+        res = supabase.table("alunos").select("*").execute()
+        df = pd.DataFrame(res.data)
+
+        if not df.empty:
+            col1, col2 = st.columns(2)
+            col1.metric("Total de Alunos", len(df))
+            col2.metric("Escolas Cadastradas", df["escola_origem"].nunique() if "escola_origem" in df else 0)
+
+            if "escola_origem" in df and not df["escola_origem"].isna().all():
+                fig = px.bar(df["escola_origem"].value_counts().reset_index(), 
+                             x="escola_origem", y="count", 
+                             title="Alunos por Escola de Origem",
+                             labels={"escola_origem": "Escola", "count": "Quantidade"})
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Nenhum aluno cadastrado até o momento.")
+
+    # --- CADASTRO DE ALUNOS (INDIVIDUAL) ---
+    elif menu == "Cadastrar Aluno":
+        st.title("📝 Cadastrar Novo Aluno (Individual)")
         
-        with st.form("form_cadastro", clear_on_submit=True):
+        with st.form("form_aluno"):
             col1, col2 = st.columns(2)
             with col1:
-                nome = st.text_input("Nome Completo do Aluno *")
-                cpf = st.text_input("CPF do Aluno *", placeholder="000.000.000-00")
-                data_nasc = st.date_input("Data de Nascimento")
+                nome = st.text_input("Nome Completo *")
+                cpf = st.text_input("CPF")
+                data_nasc = st.text_input("Data de Nascimento (DD/MM/AAAA)")
             with col2:
-                escola_origem = st.selectbox("Escola de Origem *", options=ESCOLAS)
-                turma = st.text_input("Série / Turma *", placeholder="Ex: 5º Ano A")
-                observacoes = st.text_area("Observações")
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            btn_salvar = st.form_submit_button("💾 Salvar Cadastro")
+                escola = st.text_input("Escola de Origem")
+                turma = st.text_input("Turma")
+                endereco = st.text_input("Endereço Completo")
+                
+            obs = st.text_area("Observações")
             
-            if btn_salvar:
-                if nome and cpf and escola_origem:
-                    novo_aluno = pd.DataFrame([{
-                        "Nome": nome, "CPF": cpf, "Data Nasc.": str(data_nasc),
-                        "Escola Origem": escola_origem, "Turma": turma, "Observações": observacoes
-                    }])
-                    st.session_state["alunos_db"] = pd.concat([st.session_state["alunos_db"], novo_aluno], ignore_index=True)
-                    st.success(f"✅ Aluno(a) **{nome}** cadastrado(a) com sucesso!")
+            submitted = st.form_submit_button("Salvar Aluno")
+            if submitted:
+                if not nome:
+                    st.error("O campo Nome é obrigatório.")
                 else:
-                    st.error("⚠️ Preencha todos os campos obrigatórios (*).")
+                    dados = {
+                        "nome": nome,
+                        "cpf": cpf,
+                        "data_nasc": data_nasc,
+                        "escola_origem": escola,
+                        "turma": turma,
+                        "endereco": endereco,
+                        "observacoes": obs
+                    }
+                    supabase.table("alunos").insert(dados).execute()
+                    st.success(f"Aluno {nome} cadastrado com sucesso!")
 
-        st.markdown("---")
+    # --- IMPORTAR PLANILHA (EM LOTE) ---
+    elif menu == "Importar Planilha":
+        st.title("📂 Importação de Alunos em Lote")
+        st.info("Envie um arquivo **.xlsx** ou **.csv** com as seguintes colunas: `nome`, `cpf`, `data_nasc`, `escola_origem`, `turma`, `endereco`, `observacoes`")
 
-        # ---------------------------------------------------------
-        # SEÇÃO: Importação em Lote (Planilhas) - Visual Reformulado
-        # ---------------------------------------------------------
-        st.markdown("<h3 style='margin-top: 20px; margin-bottom: 20px;'>📥 Importação de Alunos em Lote</h3>", unsafe_allow_html=True)
+        arquivo = st.file_uploader("Selecione a planilha", type=["xlsx", "csv"])
 
-        col_left, col_right = st.columns(2, gap="medium")
-
-        # PASSO 1: Baixar Modelo
-        with col_left:
-            st.markdown("""
-            <div class="import-card">
-                <div>
-                    <span class="step-badge">Passo 1</span>
-                    <div class="card-header-title">📄 Baixar Planilha Modelo</div>
-                    <div class="card-description">
-                        Baixe o modelo oficial padronizado em Excel para preencher as informações dos alunos com a formatação correta antes de realizar a importação.
-                    </div>
-                    <div class="info-pill">
-                        💡 <b>Campos inclusos:</b> Nome, CPF, Data Nasc., Escola Origem, Turma e Observações.
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.download_button(
-                label="📥 Baixar Modelo (.xlsx)",
-                data=gerar_planilha_modelo(),
-                file_name="modelo_importacao_alunos.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-
-        # PASSO 2: Enviar Planilha Preenchida
-        with col_right:
-            st.markdown("""
-            <div class="import-card">
-                <div>
-                    <span class="step-badge" style="background-color: #d1fae5; color: #059669;">Passo 2</span>
-                    <div class="card-header-title">📤 Upload da Planilha Preenchida</div>
-                    <div class="card-description">
-                        Envie o arquivo preenchido contendo os dados dos alunos. Suportamos arquivos nos formatos <b>.XLSX</b> ou <b>.CSV</b>.
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            arquivo_enviado = st.file_uploader(
-                "Arraste ou selecione seu arquivo", 
-                type=["xlsx", "csv"],
-                key="uploader_lote_novo",
-                label_visibility="collapsed"
-            )
-
-        # Processamento do Arquivo Enviado
-        if arquivo_enviado is not None:
-            st.markdown("<br>", unsafe_allow_html=True)
+        if arquivo is not None:
             try:
-                df_upload = pd.read_csv(arquivo_enviado) if arquivo_enviado.name.endswith('.csv') else pd.read_excel(arquivo_enviado)
-                
-                st.success(f"✅ **Arquivo carregado com sucesso!** Foram encontrados **{len(df_upload)}** registros.")
-                
-                with st.expander("🔍 Pré-visualizar dados importados", expanded=True):
-                    st.dataframe(df_upload, use_container_width=True)
-                
-                if st.button("🚀 Confirmar e Integrar Registros", use_container_width=True):
-                    st.session_state["alunos_db"] = pd.concat([st.session_state["alunos_db"], df_upload], ignore_index=True)
-                    st.balloons()
-                    st.success(f"🎉 Todos os {len(df_upload)} alunos foram salvos no banco de dados!")
+                if arquivo.name.endswith(".csv"):
+                    df_import = pd.read_csv(arquivo)
+                else:
+                    df_import = pd.read_excel(arquivo)
+
+                # Tratar valores vazios
+                df_import = df_import.fillna("")
+
+                st.subheader("Pré-visualização dos dados:")
+                st.dataframe(df_import, use_container_width=True)
+
+                if st.button("Confirmar Importação para o Supabase"):
+                    registros = df_import.to_dict(orient="records")
+                    supabase.table("alunos").insert(registros).execute()
+                    st.success(f"Sucesso! {len(registros)} alunos foram importados para o banco de dados.")
             except Exception as e:
-                st.error(f"❌ Erro ao ler o arquivo: {e}")
+                st.error(f"Erro ao processar o arquivo: {e}")
 
-    # ---------------------------------------------------------
-    # ABA 2: DASHBOARD DO ADMINISTRADOR (Somente Admin)
-    # ---------------------------------------------------------
-    if aba_admin:
-        with aba_admin:
-            df = st.session_state["alunos_db"]
-            
-            total_alunos = len(df)
-            escolas_ativas = df["Escola Origem"].nunique()
-            
-            if not df.empty and "Data Nasc." in df.columns:
-                df['Data_dt'] = pd.to_datetime(df['Data Nasc.'], errors='coerce')
-                ano_atual = datetime.now().year
-                df['Idade'] = ano_atual - df['Data_dt'].dt.year
-                media_idade = round(df['Idade'].mean(), 1) if not df['Idade'].isna().all() else 0.0
-            else:
-                media_idade = 0.0
+    # --- LISTAGEM E EDIÇÃO ---
+    elif menu == "Listar Alunos":
+        st.title("📋 Lista de Alunos Cadastrados")
+        res = supabase.table("alunos").select("*").execute()
+        df = pd.DataFrame(res.data)
 
-            c1, c2, c3, c4 = st.columns(4)
-            
-            with c1:
-                st.markdown(f"""
-                    <div class="kpi-card">
-                        <div>
-                            <div class="kpi-title">TOTAL DE ALUNOS</div>
-                            <div class="kpi-value">{total_alunos}</div>
-                            <div class="kpi-subtitle" style="color: #10b981;">📈 Base Consolidada</div>
-                        </div>
-                        <div class="kpi-icon icon-purple">👥</div>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-            with c2:
-                st.markdown(f"""
-                    <div class="kpi-card">
-                        <div>
-                            <div class="kpi-title">ESCOLAS ATIVAS</div>
-                            <div class="kpi-value">{escolas_ativas}</div>
-                            <div class="kpi-subtitle" style="color: #64748b;">Instituições cadastradas</div>
-                        </div>
-                        <div class="kpi-icon icon-green">🏫</div>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-            with c3:
-                st.markdown(f"""
-                    <div class="kpi-card">
-                        <div>
-                            <div class="kpi-title">MÉDIA DE IDADE</div>
-                            <div class="kpi-value">{media_idade} <span style="font-size:1rem; font-weight:normal;">anos</span></div>
-                            <div class="kpi-subtitle" style="color: #64748b;">Calculado por data nasc.</div>
-                        </div>
-                        <div class="kpi-icon icon-yellow">🎂</div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-            with c4:
-                st.markdown("""
-                    <div class="kpi-card">
-                        <div>
-                            <div class="kpi-title">SEGURANÇA DE DADOS</div>
-                            <div class="kpi-value">100%</div>
-                            <div class="kpi-subtitle" style="color: #64748b;">Isolamento Ativo por Escola</div>
-                        </div>
-                        <div class="kpi-icon icon-blue">🛡️</div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-            col_g1, col_g2 = st.columns(2)
-            
-            with col_g1:
-                st.markdown("### 📊 Cadastros por Escola")
-                if not df.empty:
-                    df_escola = df['Escola Origem'].value_counts().reset_index()
-                    df_escola.columns = ['Escola', 'Qtd']
-                    
-                    fig_barras = px.bar(df_escola, x='Escola', y='Qtd', color_discrete_sequence=['#4f46e5'])
-                    fig_barras.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=10, b=10), xaxis_title=None, yaxis_title=None)
-                    st.plotly_chart(fig_barras, use_container_width=True)
-                    
-            with col_g2:
-                st.markdown("### 🍕 Distribuição por Faixa Etária")
-                if not df.empty and 'Idade' in df.columns:
-                    def faixa_etaria(idade):
-                        if idade <= 10: return 'Até 10 anos'
-                        elif 11 <= idade <= 14: return '11 a 14 anos'
-                        else: return '15+ anos'
-                        
-                    df['Faixa'] = df['Idade'].apply(faixa_etaria)
-                    df_faixa = df['Faixa'].value_counts().reset_index()
-                    df_faixa.columns = ['Faixa', 'Qtd']
-                    
-                    fig_donut = px.pie(df_faixa, names='Faixa', values='Qtd', hole=0.6, color_discrete_sequence=['#10b981', '#3b82f6', '#f59e0b'])
-                    fig_donut.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=10, b=10), showlegend=True)
-                    st.plotly_chart(fig_donut, use_container_width=True)
-
-            st.markdown("---")
-            st.markdown("### 📋 Exportar Base de Dados Unificada")
+        if not df.empty:
             st.dataframe(df, use_container_width=True)
             
-            if not df.empty:
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Exportar CSV",
-                    data=csv,
-                    file_name="base_dados_unificada.csv",
-                    mime="text/csv"
-                )
-
-    # ---------------------------------------------------------
-    # ABA 3: GESTÃO DE USUÁRIOS E ACESSOS (Somente Admin)
-    # ---------------------------------------------------------
-    if aba_gestao_usuarios:
-        with aba_gestao_usuarios:
-            st.subheader("👥 Controle de Acessos e Usuários")
-            
-            col_novo, col_lista = st.columns([1, 1.5])
-            
-            with col_novo:
-                st.markdown("#### ➕ Cadastrar Novo Usuário")
-                with st.form("form_novo_usuario", clear_on_submit=True):
-                    novo_nome = st.text_input("Nome Completo *")
-                    novo_usr = st.text_input("Nome de Usuário (Login) *")
-                    nova_senha = st.text_input("Senha *", type="password")
-                    novo_perfil = st.selectbox("Perfil de Acesso *", ["Usuário Comum", "Administrador"])
-                    
-                    btn_cad_usr = st.form_submit_button("➕ Criar Usuário")
-                    if btn_cad_usr:
-                        if novo_nome and novo_usr and nova_senha:
-                            # Verifica se o login já existe
-                            if novo_usr in st.session_state["usuarios_db"]["Usuario"].values:
-                                st.error("⚠️ Este nome de usuário já existe.")
-                            else:
-                                novo_registro = pd.DataFrame([{
-                                    "Usuario": novo_usr,
-                                    "Senha": nova_senha,
-                                    "Nome": novo_nome,
-                                    "Perfil": novo_perfil
-                                }])
-                                st.session_state["usuarios_db"] = pd.concat([st.session_state["usuarios_db"], novo_registro], ignore_index=True)
-                                st.success(f"✅ Usuário **{novo_usr}** criado com sucesso!")
-                                st.rerun()
-                        else:
-                            st.error("⚠️ Preencha todos os campos obrigatórios.")
-            
-            with col_lista:
-                st.markdown("#### 📋 Usuários Cadastrados")
-                df_exib_usr = st.session_state["usuarios_db"][["Nome", "Usuario", "Perfil"]].copy()
-                st.dataframe(df_exib_usr, use_container_width=True)
-                
-                # Excluir Usuário
-                st.markdown("#### 🗑️ Remover Usuário")
-                usuarios_existentes = [u for u in st.session_state["usuarios_db"]["Usuario"].tolist() if u != "admin"]
-                if usuarios_existentes:
-                    usr_para_remover = st.selectbox("Selecione o usuário para remover", usuarios_existentes)
-                    if st.button("❌ Confirmar Remoção"):
-                        st.session_state["usuarios_db"] = st.session_state["usuarios_db"][
-                            st.session_state["usuarios_db"]["Usuario"] != usr_para_remover
-                        ]
-                        st.success(f"Usuário **{usr_para_remover}** removido com sucesso!")
-                        st.rerun()
-                else:
-                    st.caption("Nenhum usuário secundário disponível para remoção.")
+            if user["perfil"] == "Administrador":
+                st.subheader("🗑️ Excluir Registro")
+                aluno_id = st.selectbox("Selecione o ID do aluno para excluir:", df["id"])
+                if st.button("Excluir Aluno"):
+                    supabase.table("alunos").delete().eq("id", aluno_id).execute()
+                    st.warning("Aluno removido!")
+                    st.rerun()
+        else:
+            st.info("Nenhum registro encontrado.")
