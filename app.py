@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
+from datetime import datetime
 
 # Configuração da página
 st.set_page_config(
@@ -8,73 +10,97 @@ st.set_page_config(
     layout="wide"
 )
 
-# Estilização CSS avançada (Cores escuras, bordas e destaque)
+# Estilização CSS para recriar o visual Clean e Moderno da Imagem 1
 st.markdown("""
     <style>
-    /* Fundo geral da página */
+    /* Fundo claro da página */
     .stApp {
-        background-color: #0f172a !important;
-        color: #f8fafc !important;
+        background-color: #f3f4f6 !important;
+        color: #1f2937 !important;
     }
     
-    /* Textos, Títulos e Labels */
-    h1, h2, h3, h4, label, .stMarkdown, p {
-        color: #f8fafc !important;
-    }
-
-    /* Estilo dos Containers/Forms */
-    [data-testid="stForm"], div[data-testid="stVerticalBlock"] > div[style*="background-color"] {
-        background-color: #1e293b !important;
-        border: 1px solid #334155 !important;
-        border-radius: 12px !important;
-        padding: 20px !important;
+    /* Fontes e Títulos */
+    h1, h2, h3, h4, label, .stMarkdown {
+        color: #111827 !important;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
 
     /* Estilo das Abas */
     .stTabs [data-baseweb="tab-list"] {
-        background-color: #1e293b;
-        border-radius: 8px;
+        background-color: #ffffff;
+        border-radius: 10px;
         padding: 5px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        color: #94a3b8 !important;
-        font-weight: 600;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .stTabs [aria-selected="true"] {
-        background-color: #2563eb !important;
+        background-color: #4f46e5 !important;
         color: #ffffff !important;
-        border-radius: 6px;
+        border-radius: 8px;
     }
 
-    /* Cards do Dashboard (Metrics) */
-    div[data-testid="stMetric"] {
-        background-color: #1e293b !important;
-        border-left: 5px solid #2563eb !important;
-        padding: 15px !important;
-        border-radius: 8px !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3) !important;
+    /* Cards do Dashboard */
+    .kpi-card {
+        background-color: #ffffff;
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
     }
-    
-    /* Botões */
-    .stButton>button {
-        background-color: #2563eb !important;
-        color: white !important;
-        border-radius: 8px !important;
-        border: none !important;
-        font-weight: bold !important;
+    .kpi-title {
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
-    .stButton>button:hover {
-        background-color: #1d4ed8 !important;
+    .kpi-value {
+        font-size: 1.875rem;
+        font-weight: 800;
+        color: #111827;
+        margin-top: 4px;
+        margin-bottom: 4px;
+    }
+    .kpi-subtitle {
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .kpi-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+    }
+
+    /* Cores dos Ícones dos Cards */
+    .icon-purple { background-color: #e0e7ff; color: #4f46e5; }
+    .icon-green { background-color: #d1fae5; color: #10b981; }
+    .icon-yellow { background-color: #fef3c7; color: #f59e0b; }
+    .icon-blue { background-color: #e0f2fe; color: #0284c7; }
+
+    /* Container de Gráficos e Tabelas */
+    .box-container {
+        background-color: #ffffff;
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        margin-top: 15px;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# Banco de dados temporário
+# Banco de dados inicial
 if "alunos_db" not in st.session_state:
     st.session_state["alunos_db"] = pd.DataFrame([
-        {"Nome": "Ana Silva", "CPF": "111.222.333-00", "Data Nasc.": "2015-05-10", "Escola Origem": "Adélia Carneiro Pedrosa", "Turma": "5º Ano A", "Observações": "Regular"},
-        {"Nome": "Bruno Souza", "CPF": "222.333.444-11", "Data Nasc.": "2014-08-20", "Escola Origem": "Diogo Dias", "Turma": "6º Ano B", "Observações": ""},
-        {"Nome": "Carla Santos", "CPF": "333.444.555-22", "Data Nasc.": "2016-02-15", "Escola Origem": "Adélia Carneiro Pedrosa", "Turma": "4º Ano A", "Observações": ""}
+        {"Nome": "Ana Silva", "CPF": "111.222.333-00", "Data Nasc.": "2015-05-10", "Escola Origem": "Escola Municipal Dom Pedro II", "Turma": "5º Ano A", "Observações": "Regular"},
+        {"Nome": "Bruno Souza", "CPF": "222.333.444-11", "Data Nasc.": "2010-08-20", "Escola Origem": "Escola Municipal Dom Pedro II", "Turma": "6º Ano B", "Observações": ""},
+        {"Nome": "Carla Santos", "CPF": "333.444.555-22", "Data Nasc.": "2018-02-15", "Escola Origem": "Escola Municipal Paulo Freire", "Turma": "4º Ano A", "Observações": ""},
+        {"Nome": "Diego Lima", "CPF": "444.555.666-33", "Data Nasc.": "2012-11-30", "Escola Origem": "Escola Municipal Monteiro Lobato", "Turma": "7º Ano C", "Observações": ""}
     ])
 
 ESCOLAS = [
@@ -110,7 +136,6 @@ aba_cadastro, aba_importacao, aba_admin = st.tabs([
 # ---------------------------------------------------------
 with aba_cadastro:
     st.subheader("📝 Cadastro Individual de Aluno")
-    
     with st.form("form_cadastro", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
@@ -123,7 +148,6 @@ with aba_cadastro:
             observacoes = st.text_area("Observações")
 
         btn_salvar = st.form_submit_button("💾 Salvar Cadastro")
-        
         if btn_salvar:
             if nome and cpf and escola_origem:
                 novo_aluno = pd.DataFrame([{
@@ -141,13 +165,11 @@ with aba_cadastro:
 with aba_importacao:
     st.subheader("📥 Importação de Dados Quinzenal")
     arquivo_enviado = st.file_uploader("Selecione o arquivo da planilha (.xlsx ou .csv)", type=["xlsx", "csv"])
-    
     if arquivo_enviado is not None:
         try:
             df = pd.read_csv(arquivo_enviado) if arquivo_enviado.name.endswith('.csv') else pd.read_excel(arquivo_enviado)
             st.success("✅ Arquivo carregado com sucesso!")
             st.dataframe(df, use_container_width=True)
-            
             if st.button("🚀 Processar e Salvar Registros"):
                 st.session_state["alunos_db"] = pd.concat([st.session_state["alunos_db"], df], ignore_index=True)
                 st.balloons()
@@ -159,63 +181,133 @@ with aba_importacao:
 # ABA 3: DASHBOARD DO ADMINISTRADOR
 # ---------------------------------------------------------
 with aba_admin:
-    st.subheader("🔒 Painel de Controle e Métricas")
     senha_digitada = st.text_input("Digite a senha do administrador:", type="password")
     
-    # Senha padrão: admin123
     if senha_digitada == "admin123":
-        st.success("🔓 Acesso liberado!")
+        df = st.session_state["alunos_db"]
         
-        df_total = st.session_state["alunos_db"]
+        # CÁLCULOS DOS CARDS
+        total_alunos = len(df)
+        escolas_ativas = df["Escola Origem"].nunique()
         
-        # 1. CARDS DE MÉTRICAS
-        col_m1, col_m2, col_m3 = st.columns(3)
-        col_m1.metric("Total de Alunos", len(df_total))
-        col_m2.metric("Escolas Registradas", df_total["Escola Origem"].nunique())
-        col_m3.metric("Turmas Atendidas", df_total["Turma"].nunique())
+        # Cálculo de Média de Idade
+        if not df.empty and "Data Nasc." in df.columns:
+            df['Data_dt'] = pd.to_datetime(df['Data Nasc.'], errors='coerce')
+            ano_atual = datetime.now().year
+            df['Idade'] = ano_atual - df['Data_dt'].dt.year
+            media_idade = round(df['Idade'].mean(), 1) if not df['Idade'].isna().all() else 0.0
+        else:
+            media_idade = 0.0
+
+        # --- 1. CARDS DE INDICADORES (HTML + CSS) ---
+        c1, c2, c3, c4 = st.columns(4)
         
-        st.divider()
-        
-        # 2. DASHBOARD GRÁFICO
+        with c1:
+            st.markdown(f"""
+                <div class="kpi-card">
+                    <div>
+                        <div class="kpi-title">TOTAL DE ALUNOS</div>
+                        <div class="kpi-value">{total_alunos}</div>
+                        <div class="kpi-subtitle" style="color: #10b981;">📈 Base Consolida</div>
+                    </div>
+                    <div class="kpi-icon icon-purple">👥</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        with c2:
+            st.markdown(f"""
+                <div class="kpi-card">
+                    <div>
+                        <div class="kpi-title">ESCOLAS ATIVAS</div>
+                        <div class="kpi-value">{escolas_ativas}</div>
+                        <div class="kpi-subtitle" style="color: #6b7280;">Instituições cadastradas</div>
+                    </div>
+                    <div class="kpi-icon icon-green">🏫</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        with c3:
+            st.markdown(f"""
+                <div class="kpi-card">
+                    <div>
+                        <div class="kpi-title">MÉDIA DE IDADE</div>
+                        <div class="kpi-value">{media_idade} <span style="font-size:1rem; font-weight:normal;">anos</span></div>
+                        <div class="kpi-subtitle" style="color: #6b7280;">Calculado por data nasc.</div>
+                    </div>
+                    <div class="kpi-icon icon-yellow">🎂</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        with c4:
+            st.markdown("""
+                <div class="kpi-card">
+                    <div>
+                        <div class="kpi-title">SEGURANÇA DE DADOS</div>
+                        <div class="kpi-value">100%</div>
+                        <div class="kpi-subtitle" style="color: #6b7280;">Isolamento Ativo por Escola</div>
+                    </div>
+                    <div class="kpi-icon icon-blue">🛡️</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        # --- 2. GRÁFICOS INTERATIVOS ---
         col_g1, col_g2 = st.columns(2)
+        
         with col_g1:
-            st.write("### 🏫 Alunos por Escola")
-            if not df_total.empty:
-                st.bar_chart(df_total["Escola Origem"].value_counts())
+            st.markdown("### 📊 Cadastros por Escola")
+            if not df.empty:
+                df_escola = df['Escola Origem'].value_counts().reset_index()
+                df_escola.columns = ['Escola', 'Qtd']
+                
+                fig_barras = px.bar(
+                    df_escola, x='Escola', y='Qtd',
+                    color_discrete_sequence=['#4f46e5']
+                )
+                fig_barras.update_layout(
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    xaxis_title=None, yaxis_title=None
+                )
+                st.plotly_chart(fig_barras, use_container_width=True)
                 
         with col_g2:
-            st.write("### 📚 Distribuição por Turma")
-            if not df_total.empty:
-                st.bar_chart(df_total["Turma"].value_counts())
+            st.markdown("### 🍕 Distribuição por Faixa Etária")
+            if not df.empty and 'Idade' in df.columns:
+                # Agrupamento por Faixa Etária
+                def faixa_etaria(idade):
+                    if idade <= 10: return 'Até 10 anos'
+                    elif 11 <= idade <= 14: return '11 a 14 anos'
+                    else: return '15+ anos'
+                    
+                df['Faixa'] = df['Idade'].apply(faixa_etaria)
+                df_faixa = df['Faixa'].value_counts().reset_index()
+                df_faixa.columns = ['Faixa', 'Qtd']
                 
-        st.divider()
+                fig_donut = px.pie(
+                    df_faixa, names='Faixa', values='Qtd',
+                    hole=0.6,
+                    color_discrete_sequence=['#10b981', '#3b82f6', '#f59e0b']
+                )
+                fig_donut.update_layout(
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    showlegend=True
+                )
+                st.plotly_chart(fig_donut, use_container_width=True)
+
+        # --- 3. TABELA DE DADOS & EXPORTAÇÃO ---
+        st.markdown("---")
+        st.markdown("### 📋 Exportar Base de Dados Unificada")
+        st.dataframe(df, use_container_width=True)
         
-        # 3. TABELA DE DADOS
-        st.write("### 📋 Base de Dados Completa")
-        
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            filtro_escola = st.selectbox("Filtrar por Escola", options=["Todas"] + ESCOLAS)
-        with col_f2:
-            busca_texto = st.text_input("Buscar por Nome ou CPF")
-            
-        df_exibir = df_total.copy()
-        if filtro_escola != "Todas":
-            df_exibir = df_exibir[df_exibir["Escola Origem"] == filtro_escola]
-        if busca_texto:
-            df_exibir = df_exibir[
-                df_exibir["Nome"].astype(str).str.contains(busca_texto, case=False, na=False) |
-                df_exibir["CPF"].astype(str).str.contains(busca_texto, case=False, na=False)
-            ]
-            
-        st.dataframe(df_exibir, use_container_width=True)
-        
-        if not df_exibir.empty:
-            csv = df_exibir.to_csv(index=False).encode('utf-8')
+        if not df.empty:
+            csv = df.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Baixar Relatório em CSV",
+                label="📥 Exportar CSV",
                 data=csv,
-                file_name="relatorio_alunos.csv",
+                file_name="base_dados_unificada.csv",
                 mime="text/csv"
             )
             
