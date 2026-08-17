@@ -10,26 +10,67 @@ st.set_page_config(
     layout="wide"
 )
 
-# Estilização CSS para recriar o visual Clean e Moderno da Imagem 1
+# Estilização CSS avançada para dar destaque aos formulários e inputs
 st.markdown("""
     <style>
-    /* Fundo claro da página */
+    /* Fundo suave do sistema */
     .stApp {
-        background-color: #f3f4f6 !important;
-        color: #1f2937 !important;
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
     }
     
     /* Fontes e Títulos */
     h1, h2, h3, h4, label, .stMarkdown {
-        color: #111827 !important;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #0f172a !important;
+        font-family: 'Inter', sans-serif;
     }
 
-    /* Estilo das Abas */
+    /* Estilo do Container do Formulário de Cadastro */
+    [data-testid="stForm"] {
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 16px !important;
+        padding: 30px !important;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02) !important;
+    }
+
+    /* Destaque dos Campos de Texto e Seleção (Inputs) */
+    .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea, .stDateInput input {
+        background-color: #ffffff !important;
+        border: 1.5px solid #94a3b8 !important;
+        border-radius: 8px !important;
+        color: #0f172a !important;
+        font-weight: 500 !important;
+    }
+
+    /* Foco nos campos quando clicados */
+    .stTextInput input:focus, .stTextArea textarea:focus {
+        border-color: #4f46e5 !important;
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2) !important;
+    }
+
+    /* Botão Salvar em Destaque Azul */
+    .stFormSubmitButton > button {
+        background-color: #4f46e5 !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 10px 24px !important;
+        box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.3) !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+
+    .stFormSubmitButton > button:hover {
+        background-color: #4338ca !important;
+        transform: translateY(-1px) !important;
+    }
+
+    /* Customização das Abas */
     .stTabs [data-baseweb="tab-list"] {
         background-color: #ffffff;
         border-radius: 10px;
-        padding: 5px;
+        padding: 6px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .stTabs [aria-selected="true"] {
@@ -38,59 +79,24 @@ st.markdown("""
         border-radius: 8px;
     }
 
-    /* Cards do Dashboard */
+    /* Estilos do Dashboard (Cards KPIs) */
     .kpi-card {
         background-color: #ffffff;
         border-radius: 16px;
         padding: 20px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 10px;
     }
-    .kpi-title {
-        font-size: 0.75rem;
-        font-weight: 700;
-        color: #6b7280;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-    .kpi-value {
-        font-size: 1.875rem;
-        font-weight: 800;
-        color: #111827;
-        margin-top: 4px;
-        margin-bottom: 4px;
-    }
-    .kpi-subtitle {
-        font-size: 0.75rem;
-        font-weight: 600;
-    }
-    .kpi-icon {
-        width: 42px;
-        height: 42px;
-        border-radius: 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 20px;
-    }
-
-    /* Cores dos Ícones dos Cards */
+    .kpi-title { font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
+    .kpi-value { font-size: 1.875rem; font-weight: 800; color: #0f172a; margin: 4px 0; }
+    .kpi-subtitle { font-size: 0.75rem; font-weight: 600; }
+    .kpi-icon { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
     .icon-purple { background-color: #e0e7ff; color: #4f46e5; }
     .icon-green { background-color: #d1fae5; color: #10b981; }
     .icon-yellow { background-color: #fef3c7; color: #f59e0b; }
     .icon-blue { background-color: #e0f2fe; color: #0284c7; }
-
-    /* Container de Gráficos e Tabelas */
-    .box-container {
-        background-color: #ffffff;
-        border-radius: 16px;
-        padding: 20px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        margin-top: 15px;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -136,6 +142,7 @@ aba_cadastro, aba_importacao, aba_admin = st.tabs([
 # ---------------------------------------------------------
 with aba_cadastro:
     st.subheader("📝 Cadastro Individual de Aluno")
+    
     with st.form("form_cadastro", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
@@ -147,7 +154,9 @@ with aba_cadastro:
             turma = st.text_input("Série / Turma *", placeholder="Ex: 5º Ano A")
             observacoes = st.text_area("Observações")
 
+        st.markdown("<br>", unsafe_allow_html=True)
         btn_salvar = st.form_submit_button("💾 Salvar Cadastro")
+        
         if btn_salvar:
             if nome and cpf and escola_origem:
                 novo_aluno = pd.DataFrame([{
@@ -186,11 +195,9 @@ with aba_admin:
     if senha_digitada == "admin123":
         df = st.session_state["alunos_db"]
         
-        # CÁLCULOS DOS CARDS
         total_alunos = len(df)
         escolas_ativas = df["Escola Origem"].nunique()
         
-        # Cálculo de Média de Idade
         if not df.empty and "Data Nasc." in df.columns:
             df['Data_dt'] = pd.to_datetime(df['Data Nasc.'], errors='coerce')
             ano_atual = datetime.now().year
@@ -199,7 +206,6 @@ with aba_admin:
         else:
             media_idade = 0.0
 
-        # --- 1. CARDS DE INDICADORES (HTML + CSS) ---
         c1, c2, c3, c4 = st.columns(4)
         
         with c1:
@@ -208,7 +214,7 @@ with aba_admin:
                     <div>
                         <div class="kpi-title">TOTAL DE ALUNOS</div>
                         <div class="kpi-value">{total_alunos}</div>
-                        <div class="kpi-subtitle" style="color: #10b981;">📈 Base Consolida</div>
+                        <div class="kpi-subtitle" style="color: #10b981;">📈 Base Consolidada</div>
                     </div>
                     <div class="kpi-icon icon-purple">👥</div>
                 </div>
@@ -220,7 +226,7 @@ with aba_admin:
                     <div>
                         <div class="kpi-title">ESCOLAS ATIVAS</div>
                         <div class="kpi-value">{escolas_ativas}</div>
-                        <div class="kpi-subtitle" style="color: #6b7280;">Instituições cadastradas</div>
+                        <div class="kpi-subtitle" style="color: #64748b;">Instituições cadastradas</div>
                     </div>
                     <div class="kpi-icon icon-green">🏫</div>
                 </div>
@@ -232,7 +238,7 @@ with aba_admin:
                     <div>
                         <div class="kpi-title">MÉDIA DE IDADE</div>
                         <div class="kpi-value">{media_idade} <span style="font-size:1rem; font-weight:normal;">anos</span></div>
-                        <div class="kpi-subtitle" style="color: #6b7280;">Calculado por data nasc.</div>
+                        <div class="kpi-subtitle" style="color: #64748b;">Calculado por data nasc.</div>
                     </div>
                     <div class="kpi-icon icon-yellow">🎂</div>
                 </div>
@@ -244,13 +250,12 @@ with aba_admin:
                     <div>
                         <div class="kpi-title">SEGURANÇA DE DADOS</div>
                         <div class="kpi-value">100%</div>
-                        <div class="kpi-subtitle" style="color: #6b7280;">Isolamento Ativo por Escola</div>
+                        <div class="kpi-subtitle" style="color: #64748b;">Isolamento Ativo por Escola</div>
                     </div>
                     <div class="kpi-icon icon-blue">🛡️</div>
                 </div>
             """, unsafe_allow_html=True)
 
-        # --- 2. GRÁFICOS INTERATIVOS ---
         col_g1, col_g2 = st.columns(2)
         
         with col_g1:
@@ -259,22 +264,13 @@ with aba_admin:
                 df_escola = df['Escola Origem'].value_counts().reset_index()
                 df_escola.columns = ['Escola', 'Qtd']
                 
-                fig_barras = px.bar(
-                    df_escola, x='Escola', y='Qtd',
-                    color_discrete_sequence=['#4f46e5']
-                )
-                fig_barras.update_layout(
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    margin=dict(l=10, r=10, t=10, b=10),
-                    xaxis_title=None, yaxis_title=None
-                )
+                fig_barras = px.bar(df_escola, x='Escola', y='Qtd', color_discrete_sequence=['#4f46e5'])
+                fig_barras.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=10, b=10), xaxis_title=None, yaxis_title=None)
                 st.plotly_chart(fig_barras, use_container_width=True)
                 
         with col_g2:
             st.markdown("### 🍕 Distribuição por Faixa Etária")
             if not df.empty and 'Idade' in df.columns:
-                # Agrupamento por Faixa Etária
                 def faixa_etaria(idade):
                     if idade <= 10: return 'Até 10 anos'
                     elif 11 <= idade <= 14: return '11 a 14 anos'
@@ -284,20 +280,10 @@ with aba_admin:
                 df_faixa = df['Faixa'].value_counts().reset_index()
                 df_faixa.columns = ['Faixa', 'Qtd']
                 
-                fig_donut = px.pie(
-                    df_faixa, names='Faixa', values='Qtd',
-                    hole=0.6,
-                    color_discrete_sequence=['#10b981', '#3b82f6', '#f59e0b']
-                )
-                fig_donut.update_layout(
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    margin=dict(l=10, r=10, t=10, b=10),
-                    showlegend=True
-                )
+                fig_donut = px.pie(df_faixa, names='Faixa', values='Qtd', hole=0.6, color_discrete_sequence=['#10b981', '#3b82f6', '#f59e0b'])
+                fig_donut.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=10, b=10), showlegend=True)
                 st.plotly_chart(fig_donut, use_container_width=True)
 
-        # --- 3. TABELA DE DADOS & EXPORTAÇÃO ---
         st.markdown("---")
         st.markdown("### 📋 Exportar Base de Dados Unificada")
         st.dataframe(df, use_container_width=True)
