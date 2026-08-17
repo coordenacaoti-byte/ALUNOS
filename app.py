@@ -1,71 +1,80 @@
 import streamlit as st
 import pandas as pd
 
-# ---------------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA E DESIGN CUSTOMIZADO (CSS)
-# ---------------------------------------------------------
+# Configuração da página
 st.set_page_config(
     page_title="Sistema de Gestão Escolar",
     page_icon="🏫",
     layout="wide"
 )
 
-# Estilização do visual (Cores, Cards e Bordas)
+# Estilização CSS avançada (Cores escuras, bordas e destaque)
 st.markdown("""
     <style>
-    /* Fundo da aplicação e estilo do container */
+    /* Fundo geral da página */
     .stApp {
-        background-color: #f8f9fa;
+        background-color: #0f172a !important;
+        color: #f8fafc !important;
     }
     
-    /* Personalização das Abas */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: #ffffff;
-        border-radius: 8px 8px 0px 0px;
-        padding: 10px 20px;
-        font-weight: 600;
-        box-shadow: 0px -2px 5px rgba(0,0,0,0.03);
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #1E3A8A !important;
-        color: white !important;
-    }
-    
-    /* Estilo dos Cards de Métricas */
-    div[data-testid="stMetric"] {
-        background-color: #ffffff;
-        border-left: 5px solid #1E3A8A;
-        padding: 15px;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    /* Textos, Títulos e Labels */
+    h1, h2, h3, h4, label, .stMarkdown, p {
+        color: #f8fafc !important;
     }
 
-    /* Títulos e Subtítulos */
-    h1 {
-        color: #1E3A8A;
-        font-weight: 700;
+    /* Estilo dos Containers/Forms */
+    [data-testid="stForm"], div[data-testid="stVerticalBlock"] > div[style*="background-color"] {
+        background-color: #1e293b !important;
+        border: 1px solid #334155 !important;
+        border-radius: 12px !important;
+        padding: 20px !important;
     }
-    h2, h3 {
-        color: #1F2937;
+
+    /* Estilo das Abas */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #1e293b;
+        border-radius: 8px;
+        padding: 5px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        color: #94a3b8 !important;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #2563eb !important;
+        color: #ffffff !important;
+        border-radius: 6px;
+    }
+
+    /* Cards do Dashboard (Metrics) */
+    div[data-testid="stMetric"] {
+        background-color: #1e293b !important;
+        border-left: 5px solid #2563eb !important;
+        padding: 15px !important;
+        border-radius: 8px !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3) !important;
+    }
+    
+    /* Botões */
+    .stButton>button {
+        background-color: #2563eb !important;
+        color: white !important;
+        border-radius: 8px !important;
+        border: none !important;
+        font-weight: bold !important;
+    }
+    .stButton>button:hover {
+        background-color: #1d4ed8 !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# ---------------------------------------------------------
-# BANCO DE DADOS EM MEMÓRIA
-# ---------------------------------------------------------
+# Banco de dados temporário
 if "alunos_db" not in st.session_state:
-    # Dados de exemplo para inicializar o Dashboard
     st.session_state["alunos_db"] = pd.DataFrame([
-        {"Nome": "Ana Silva", "CPF": "111.222.333-00", "Data Nasc.": "2015-05-10", "Escola Origem": "Adélia Carneiro Pedrosa", "Turma": "5º Ano A", "Observações": "Transferência regular"},
+        {"Nome": "Ana Silva", "CPF": "111.222.333-00", "Data Nasc.": "2015-05-10", "Escola Origem": "Adélia Carneiro Pedrosa", "Turma": "5º Ano A", "Observações": "Regular"},
         {"Nome": "Bruno Souza", "CPF": "222.333.444-11", "Data Nasc.": "2014-08-20", "Escola Origem": "Diogo Dias", "Turma": "6º Ano B", "Observações": ""},
-        {"Nome": "Carla Santos", "CPF": "333.444.555-22", "Data Nasc.": "2016-02-15", "Escola Origem": "Adélia Carneiro Pedrosa", "Turma": "4º Ano A", "Observações": ""},
-        {"Nome": "Diego Lima", "CPF": "444.555.666-33", "Data Nasc.": "2015-11-30", "Escola Origem": "Creche Criança Feliz", "Turma": "Infantil V", "Observações": ""}
+        {"Nome": "Carla Santos", "CPF": "333.444.555-22", "Data Nasc.": "2016-02-15", "Escola Origem": "Adélia Carneiro Pedrosa", "Turma": "4º Ano A", "Observações": ""}
     ])
 
 ESCOLAS = [
@@ -88,11 +97,7 @@ ESCOLAS = [
     "Edjanete Maria Valença da Silveira"
 ]
 
-# ---------------------------------------------------------
-# CABEÇALHO DA APLICAÇÃO
-# ---------------------------------------------------------
 st.title("🏫 Sistema de Gestão Escolar & Transferências")
-st.markdown("---")
 
 aba_cadastro, aba_importacao, aba_admin = st.tabs([
     "📝 Novo Cadastro", 
@@ -154,43 +159,39 @@ with aba_importacao:
 # ABA 3: DASHBOARD DO ADMINISTRADOR
 # ---------------------------------------------------------
 with aba_admin:
-    st.subheader("🔒 Acesso Restrito ao Painel de Controle")
+    st.subheader("🔒 Painel de Controle e Métricas")
     senha_digitada = st.text_input("Digite a senha do administrador:", type="password")
     
     # Senha padrão: admin123
     if senha_digitada == "admin123":
         st.success("🔓 Acesso liberado!")
-        st.markdown("---")
         
         df_total = st.session_state["alunos_db"]
         
-        # 1. CARDS DE MÉTRICAS (INDICADORES)
+        # 1. CARDS DE MÉTRICAS
         col_m1, col_m2, col_m3 = st.columns(3)
         col_m1.metric("Total de Alunos", len(df_total))
         col_m2.metric("Escolas Registradas", df_total["Escola Origem"].nunique())
         col_m3.metric("Turmas Atendidas", df_total["Turma"].nunique())
         
-        st.markdown("---")
+        st.divider()
         
         # 2. DASHBOARD GRÁFICO
         col_g1, col_g2 = st.columns(2)
-        
         with col_g1:
-            st.write("### 🏫 Alunos por Escola de Origem")
+            st.write("### 🏫 Alunos por Escola")
             if not df_total.empty:
-                grafico_escolas = df_total["Escola Origem"].value_counts()
-                st.bar_chart(grafico_escolas)
+                st.bar_chart(df_total["Escola Origem"].value_counts())
                 
         with col_g2:
             st.write("### 📚 Distribuição por Turma")
             if not df_total.empty:
-                grafico_turmas = df_total["Turma"].value_counts()
-                st.bar_chart(grafico_turmas)
+                st.bar_chart(df_total["Turma"].value_counts())
                 
-        st.markdown("---")
+        st.divider()
         
-        # 3. TABELA COM FILTROS E EXPORTAÇÃO
-        st.write("### 📋 Tabela de Dados Completa")
+        # 3. TABELA DE DADOS
+        st.write("### 📋 Base de Dados Completa")
         
         col_f1, col_f2 = st.columns(2)
         with col_f1:
@@ -212,9 +213,9 @@ with aba_admin:
         if not df_exibir.empty:
             csv = df_exibir.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Baixar Relatório em CSV/Excel",
+                label="📥 Baixar Relatório em CSV",
                 data=csv,
-                file_name="relatorio_geral_alunos.csv",
+                file_name="relatorio_alunos.csv",
                 mime="text/csv"
             )
             
