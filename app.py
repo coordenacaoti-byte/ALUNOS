@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
+from datetime import datetime, date
 import io
 from supabase import create_client, Client
 
@@ -34,19 +34,29 @@ def carregar_alunos():
                 "data_nasc": "Data Nasc.",
                 "escola_origem": "Escola Origem",
                 "turma": "Turma",
-                "observacoes": "Observações"
+                "observacoes": "Observações",
+                "criado_por": "Cadastrado Por",
+                "data_cadastro": "Data/Hora Cadastro"
             }
             if "endereco" in df.columns:
                 renames["endereco"] = "Endereço"
             df = df.rename(columns=renames)
+            
+            # Formatando a data de nascimento para DD/MM/YYYY na visualização da tabela
+            if "Data Nasc." in df.columns:
+                df["Data Nasc."] = pd.to_datetime(df["Data Nasc."], errors='coerce').dt.strftime('%d/%m/%Y')
+            
+            # Formatando a data/hora do log
+            if "Data/Hora Cadastro" in df.columns:
+                df["Data/Hora Cadastro"] = pd.to_datetime(df["Data/Hora Cadastro"], errors='coerce').dt.strftime('%d/%m/%Y %H:%M:%S')
         else:
-            df = pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações"])
+            df = pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações", "Cadastrado Por", "Data/Hora Cadastro"])
         return df
     except Exception as e:
         st.error(f"Erro ao carregar alunos: {e}")
-        return pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações"])
+        return pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações", "Cadastrado Por", "Data/Hora Cadastro"])
 
-def salvar_aluno(nome, cpf, data_nasc, escola_origem, turma, endereco, observacoes):
+def salvar_aluno(nome, cpf, data_nasc, escola_origem, turma, endereco, observacoes, usuario_logado):
     try:
         dados = {
             "nome": nome,
@@ -55,7 +65,8 @@ def salvar_aluno(nome, cpf, data_nasc, escola_origem, turma, endereco, observaco
             "escola_origem": escola_origem,
             "turma": turma,
             "endereco": endereco,
-            "observacoes": observacoes
+            "observacoes": observacoes,
+            "criado_por": usuario_logado
         }
         supabase.table("alunos").insert(dados).execute()
         return True
@@ -63,7 +74,7 @@ def salvar_aluno(nome, cpf, data_nasc, escola_origem, turma, endereco, observaco
         st.error(f"Erro ao salvar aluno: {e}")
         return False
 
-def salvar_alunos_em_lote(df_lote):
+def salvar_alunos_em_lote(df_lote, usuario_logado):
     try:
         renames = {
             "Nome": "nome",
@@ -82,11 +93,23 @@ def salvar_alunos_em_lote(df_lote):
         if "data_nasc" in df_lote.columns:
             df_lote["data_nasc"] = df_lote["data_nasc"].astype(str)
             
+        # Adiciona o usuario responsável em todos os registros
+        df_lote["criado_por"] = usuario_logado
+            
         registros = df_lote.fillna("").to_dict(orient="records")
         supabase.table("alunos").insert(registros).execute()
         return True
     except Exception as e:
         st.error(f"Erro na importação em lote: {e}")
+        return False
+
+def limpar_tabela_alunos():
+    try:
+        # Exclui todos os registros do banco de dados Supabase
+        supabase.table("alunos").delete().neq("id", -1).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao limpar banco de dados: {e}")
         return False
 
 def carregar_usuarios():
@@ -323,7 +346,15 @@ else:
             with col1:
                 nome = st.text_input("Nome Completo do Aluno *")
                 cpf = st.text_input("CPF do Aluno *", placeholder="000.000.000-00")
-                data_nasc = st.date_input("Data de Nascimento")
+                
+                # DATA DE NASCIMENTO: Formato DD/MM/YYYY e Limite 1980 a 2026
+                data_nasc = st.date_input(
+                    "Data de Nascimento *",
+                    value=date(2015, 1, 1),
+                    min_value=date(1980, 1, 1),
+                    max_value=date(2026, 12, 31),
+                    format="DD/MM/YYYY"
+                )
             with col2:
                 escola_origem = st.selectbox("Escola de Origem *", options=ESCOLAS)
                 turma = st.text_input("Série / Turma *", placeholder="Ex: 5º Ano A")
@@ -336,7 +367,8 @@ else:
             
             if btn_salvar:
                 if nome and cpf and escola_origem:
-                    if salvar_aluno(nome, cpf, str(data_nasc), escola_origem, turma, endereco, observacoes):
+                    usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
+                    if salvar_aluno(nome, cpf, str(data_nasc), escola_origem, turma, endereco, observacoes, usuario_responsavel):
                         st.success(f"✅ Aluno(a) **{nome}** salvo no Supabase com sucesso!")
                 else:
                     st.error("⚠️ Preencha todos os campos obrigatórios (*).")
@@ -394,7 +426,8 @@ else:
                     st.dataframe(df_upload, use_container_width=True)
                 
                 if st.button("🚀 Confirmar e Integrar Registros no Supabase", use_container_width=True):
-                    if salvar_alunos_em_lote(df_upload):
+                    usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
+                    if salvar_alunos_em_lote(df_upload, usuario_responsavel):
                         st.balloons()
                         st.success(f"🎉 Todos os {len(df_upload)} alunos foram salvos no banco de dados Supabase!")
             except Exception as e:
@@ -411,7 +444,7 @@ else:
             escolas_ativas = df["Escola Origem"].nunique() if not df.empty and "Escola Origem" in df.columns else 0
             
             if not df.empty and "Data Nasc." in df.columns:
-                df['Data_dt'] = pd.to_datetime(df['Data Nasc.'], errors='coerce')
+                df['Data_dt'] = pd.to_datetime(df['Data Nasc.'], format='%d/%m/%Y', errors='coerce')
                 ano_atual = datetime.now().year
                 df['Idade'] = ano_atual - df['Data_dt'].dt.year
                 media_idade = round(df['Idade'].mean(), 1) if not df['Idade'].isna().all() else 0.0
@@ -484,6 +517,7 @@ else:
                 st.markdown("### 🍕 Distribuição por Faixa Etária")
                 if not df.empty and 'Idade' in df.columns:
                     def faixa_etaria(idade):
+                        if pd.isna(idade): return 'Não informada'
                         if idade <= 10: return 'Até 10 anos'
                         elif 11 <= idade <= 14: return '11 a 14 anos'
                         else: return '15+ anos'
@@ -497,19 +531,46 @@ else:
                     st.plotly_chart(fig_donut, use_container_width=True)
 
             st.markdown("---")
-            st.markdown("### 📋 Base de Dados do Supabase")
+            st.markdown("### 📋 Base de Dados Completa")
             
             cols_exibicao = [c for c in ["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações"] if c in df.columns]
             st.dataframe(df[cols_exibicao] if not df.empty else df, use_container_width=True)
             
-            if not df.empty:
-                csv = df[cols_exibicao].to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Exportar CSV do Supabase",
-                    data=csv,
-                    file_name="base_alunos_supabase.csv",
-                    mime="text/csv"
-                )
+            # BOTÕES EXPORTAR E LIMPAR BASE lado a lado
+            col_exp, col_limp, col_vazio = st.columns([1, 1, 2])
+            
+            with col_exp:
+                if not df.empty:
+                    csv = df[cols_exibicao].to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Exportar CSV do Supabase",
+                        data=csv,
+                        file_name="base_alunos_supabase.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+            
+            with col_limp:
+                if not df.empty:
+                    # Caixa de confirmação preventiva
+                    if st.checkbox("⚠️ Confirmar exclusão total da base"):
+                        if st.button("🗑️ Limpar Base de Dados", type="primary", use_container_width=True):
+                            if limpar_tabela_alunos():
+                                st.success("Base de dados de alunos limpa com sucesso!")
+                                st.rerun()
+
+            # ---------------------------------------------------------
+            # LOGS E HISTÓRICO DE AUDITORIA DE PREENCHIMENTO
+            # ---------------------------------------------------------
+            st.markdown("---")
+            st.markdown("### 🔍 Histórico de Auditoria (Logs de Preenchimento)")
+            st.caption("Acompanhe em tempo real quem criou cada registro de aluno e em qual data/horário.")
+            
+            cols_logs = [c for c in ["Nome", "CPF", "Escola Origem", "Cadastrado Por", "Data/Hora Cadastro"] if c in df.columns]
+            if not df.empty and "Cadastrado Por" in df.columns:
+                st.dataframe(df[cols_logs], use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhum registro de log encontrado até o momento.")
 
     # ---------------------------------------------------------
     # ABA 3: GESTÃO DE USUÁRIOS E PERMISSÕES
