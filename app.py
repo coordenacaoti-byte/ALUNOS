@@ -1,10 +1,16 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import io
 import base64
 from supabase import create_client, Client
+
+# Importações do ReportLab para geração de PDF
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # Configuração da página
 st.set_page_config(
@@ -85,10 +91,19 @@ def registrar_log(usuario: str, acao: str, detalhes: str = ""):
     except Exception as e:
         st.error(f"Erro ao registrar log de auditoria: {e}")
 
-def carregar_logs():
-    """Carrega o histórico de logs gravados na tabela logs_auditoria"""
+def carregar_logs(data_inicio=None, data_fim=None):
+    """Carrega o histórico de logs gravados na tabela logs_auditoria com filtro opcional por período"""
     try:
-        response = supabase.table("logs_auditoria").select("*").order("data_hora", desc=True).execute()
+        query = supabase.table("logs_auditoria").select("*")
+        
+        if data_inicio:
+            iso_inicio = f"{data_inicio}T00:00:00"
+            query = query.gte("data_hora", iso_inicio)
+        if data_fim:
+            iso_fim = f"{data_fim}T23:59:59"
+            query = query.lte("data_hora", iso_fim)
+            
+        response = query.order("data_hora", desc=True).execute()
         df_logs = pd.DataFrame(response.data)
         if not df_logs.empty:
             renames = {
@@ -117,6 +132,82 @@ def limpar_tabela_logs():
         return False
 
 # ---------------------------------------------------------
+# GERADOR DE PDF PARA LOGS DE AUDITORIA
+# ---------------------------------------------------------
+def gerar_pdf_logs_bytes(df_logs, data_ini, data_fim, usuario_solicitante):
+    """Gera um documento PDF em formato Paisagem contendo o relatório de logs"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(letter),
+        rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30
+    )
+    
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Estilos de texto
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=18,
+        textColor=colors.HexColor("#4F46E5"),
+        spaceAfter=6
+    )
+    
+    subtitle_style = ParagraphStyle(
+        'DocSubtitle',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9,
+        textColor=colors.HexColor("#475569"),
+        spaceAfter=15
+    )
+    
+    style_cell = ParagraphStyle('CellText', parent=styles['Normal'], fontSize=8, fontName='Helvetica', leading=10)
+    style_header = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.white)
+
+    # Título do Relatório
+    elements.append(Paragraph(f"{config_sys['titulo_interno']} - Relatório de Auditoria", title_style))
+    
+    periodo_str = f"<b>Período:</b> {data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
+    emissao_str = f"<b>Emissão:</b> {datetime.now().strftime('%d/%m/%Y %H:%M:%S')} por {usuario_solicitante}"
+    elements.append(Paragraph(f"{periodo_str} | {emissao_str}", subtitle_style))
+    
+    # Tabela
+    data = [["Data/Hora", "Usuário Responsável", "Ação / Evento", "Detalhes do Registro"]]
+    data[0] = [Paragraph(col, style_header) for col in data[0]]
+
+    for _, row in df_logs.iterrows():
+        data.append([
+            Paragraph(str(row.get("Data/Hora", "")), style_cell),
+            Paragraph(str(row.get("Usuário Responsável", "")), style_cell),
+            Paragraph(str(row.get("Ação / Evento", "")), style_cell),
+            Paragraph(str(row.get("Detalhes do Registro", "")), style_cell),
+        ])
+
+    # Larguras das Colunas (Largura útil total ~732 pt)
+    col_widths = [110, 140, 150, 332]
+    
+    tabela = Table(data, colWidths=col_widths, repeatRows=1)
+    tabela.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4F46E5")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+    ]))
+    
+    elements.append(tabela)
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+# ---------------------------------------------------------
 # FUNÇÕES DA BASE DE ALUNOS
 # ---------------------------------------------------------
 def carregar_alunos():
@@ -136,7 +227,6 @@ def carregar_alunos():
                 renames["endereco"] = "Endereço"
             df = df.rename(columns=renames)
             
-            # Formatando a data de nascimento para DD/MM/YYYY
             if "Data Nasc." in df.columns:
                 df["Data Nasc."] = pd.to_datetime(df["Data Nasc."], errors='coerce').dt.strftime('%d/%m/%Y')
         else:
@@ -159,7 +249,6 @@ def salvar_aluno(nome, cpf, data_nasc, escola_origem, turma, endereco, observaco
         }
         supabase.table("alunos").insert(dados).execute()
         
-        # Registrar Log Independente
         detalhes = f"Aluno: {nome} | CPF: {cpf} | Escola: {escola_origem} | Turma: {turma}"
         registrar_log(usuario_logado, "Cadastro Individual", detalhes)
         return True
@@ -190,7 +279,6 @@ def salvar_alunos_em_lote(df_lote, usuario_logado):
         registros = df_lote.fillna("").to_dict(orient="records")
         supabase.table("alunos").insert(registros).execute()
         
-        # Registrar Log Independente
         registrar_log(usuario_logado, "Importação em Lote", f"Importados {total_registros} alunos via planilha.")
         return True
     except Exception as e:
@@ -199,10 +287,7 @@ def salvar_alunos_em_lote(df_lote, usuario_logado):
 
 def limpar_tabela_alunos(usuario_logado, quantidade_deletada):
     try:
-        # Exclui todos os registros do banco de dados Supabase
         supabase.table("alunos").delete().neq("id", -1).execute()
-        
-        # Registrar Log Independente sobre a exclusão da base
         registrar_log(usuario_logado, "Exclusão da Base de Alunos", f"A base de dados contendo {quantidade_deletada} aluno(s) foi zerada.")
         return True
     except Exception as e:
@@ -340,7 +425,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Lista de Escolas de Goiana
+# Lista de Escolas
 ESCOLAS = [
     "Adélia Carneiro Pedrosa", "Arcendrino César de Albuquerque", "Capela de São Sebastião",
     "Cônego Fernando Passos", "Creche Municipal Profª Etenile Urbano Pessoa", "Diogo Dias",
@@ -388,7 +473,6 @@ if "usuario_logado" not in st.session_state:
 if st.session_state["usuario_logado"] is None:
     col_logo, col_login, col_espaco = st.columns([1, 1.5, 1])
     with col_login:
-        # Exibição da Logo na Tela de Login
         if config_sys.get("logo_base64"):
             st.markdown(f'<img src="{config_sys["logo_base64"]}" class="custom-logo">', unsafe_allow_html=True)
         else:
@@ -481,7 +565,6 @@ else:
                 nome = st.text_input("Nome Completo do Aluno *")
                 cpf = st.text_input("CPF do Aluno *", placeholder="000.000.000-00")
                 
-                # DATA DE NASCIMENTO: Formato DD/MM/YYYY e Limite 1980 a 2026
                 data_nasc = st.date_input(
                     "Data de Nascimento *",
                     value=date(2015, 1, 1),
@@ -568,7 +651,7 @@ else:
                 st.error(f"❌ Erro ao processar o arquivo: {e}")
 
     # ---------------------------------------------------------
-    # ABA 2: DASHBOARD (ADMINISTRADOR E GESTOR/VISUALIZADOR)
+    # ABA 2: DASHBOARD E LOGS (ADMINISTRADOR E GESTOR/VISUALIZADOR)
     # ---------------------------------------------------------
     if aba_admin:
         with aba_admin:
@@ -684,7 +767,7 @@ else:
                         use_container_width=True
                     )
             
-            # EXCLUSÃO DA BASE DE ALUNOS (Apenas para o Administrador)
+            # EXCLUSÃO DA BASE DE ALUNOS (Apenas para Administrador)
             if perfil == "Administrador":
                 with col_limp:
                     if not df.empty:
@@ -696,19 +779,45 @@ else:
                                     st.rerun()
 
             # ---------------------------------------------------------
-            # AUDITORIA E HISTÓRICO DE LOGS (EXCLUSIVO PARA ADMINISTRADOR)
+            # AUDITORIA, LOGS E GERADOR DE RELATÓRIO PDF
+            # (Disponível para Administrador e Gestor / Visualizador)
             # ---------------------------------------------------------
-            if perfil == "Administrador":
-                st.markdown("---")
-                st.markdown("### 🛡️ Histórico e Logs de Auditoria (Sistema Independente)")
-                st.caption("Esta tabela registra todas as ações de usuários (cadastros, importações e exclusões) e PERMANECE INTACTA mesmo quando a base de alunos é zerada.")
-                
-                df_logs = carregar_logs()
+            st.markdown("---")
+            st.markdown("### 🛡️ Histórico e Logs de Auditoria do Sistema")
+            st.caption("Esta tabela registra todas as ações de usuários (cadastros, importações e exclusões). Permanece intacta mesmo que a base de alunos seja zerada.")
+            
+            # SELETOR DE PERÍODO PARA LOGS
+            st.markdown("#### 📅 Filtrar Período e Gerar Relatório")
+            col_d1, col_d2, col_d_espaco = st.columns([1, 1, 2])
+            with col_d1:
+                dt_inicio = st.date_input("Data Inicial", value=date.today() - timedelta(days=30), format="DD/MM/YYYY", key="log_dt_ini")
+            with col_d2:
+                dt_fim = st.date_input("Data Final", value=date.today(), format="DD/MM/YYYY", key="log_dt_fim")
+
+            if dt_inicio > dt_fim:
+                st.warning("⚠️ A Data Inicial não pode ser maior do que a Data Final.")
+            else:
+                df_logs = carregar_logs(data_inicio=dt_inicio, data_fim=dt_fim)
                 st.dataframe(df_logs, use_container_width=True, hide_index=True)
 
-                col_log_exp, col_log_limp, col_log_vazio = st.columns([1, 1, 2])
+                col_pdf, col_log_csv, col_log_limp = st.columns([1.2, 1.2, 1.6])
                 
-                with col_log_exp:
+                # BOTÃO GERAR RELATÓRIO PDF (ADMIN + GESTOR)
+                with col_pdf:
+                    if not df_logs.empty:
+                        usuario_solic = f"{usr['Nome']} ({usr['Perfil']})"
+                        pdf_data = gerar_pdf_logs_bytes(df_logs, dt_inicio, dt_fim, usuario_solic)
+                        
+                        st.download_button(
+                            label="📄 Baixar Relatório em PDF",
+                            data=pdf_data,
+                            file_name=f"relatorio_logs_{dt_inicio.strftime('%d%m%Y')}_a_{dt_fim.strftime('%d%m%Y')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+
+                # BOTÃO EXPORTAR CSV LOGS
+                with col_log_csv:
                     if not df_logs.empty:
                         csv_logs = df_logs.to_csv(index=False).encode('utf-8')
                         st.download_button(
@@ -719,13 +828,15 @@ else:
                             use_container_width=True
                         )
 
-                with col_log_limp:
-                    if not df_logs.empty:
-                        if st.checkbox("⚠️ Confirmar exclusão dos LOGS"):
-                            if st.button("🗑️ Limpar Histórico de Logs", use_container_width=True):
-                                if limpar_tabela_logs():
-                                    st.success("Histórico de logs zerado com sucesso!")
-                                    st.rerun()
+                # APAGAR LOGS (APENAS ADMINISTRADOR)
+                if perfil == "Administrador":
+                    with col_log_limp:
+                        if not df_logs.empty:
+                            if st.checkbox("⚠️ Confirmar exclusão dos LOGS"):
+                                if st.button("🗑️ Limpar Histórico de Logs", use_container_width=True):
+                                    if limpar_tabela_logs():
+                                        st.success("Histórico de logs zerado com sucesso!")
+                                        st.rerun()
 
     # ---------------------------------------------------------
     # ABA 3: GESTÃO DE USUÁRIOS E CONFIGURAÇÕES (EXCLUSIVO PARA ADMINISTRADOR)
@@ -805,7 +916,6 @@ else:
                 if not df_usrs_atual.empty:
                     usr_edit = st.selectbox("Selecione o Usuário", df_usrs_atual["Usuario"].tolist(), key="select_edit_usr")
                     
-                    # Pega perfil atual
                     perfil_atual = df_usrs_atual[df_usrs_atual["Usuario"] == usr_edit]["Perfil"].values[0]
                     st.info(f"Perfil Atual: **{perfil_atual}**")
                     
