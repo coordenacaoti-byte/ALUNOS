@@ -306,6 +306,8 @@ ESCOLAS = [
     "Edjanete Maria Valença da Silveira"
 ]
 
+OPCOES_PERFIL = ["Usuário Comum", "Gestor / Visualizador", "Administrador"]
+
 def gerar_planilha_modelo():
     buffer = io.BytesIO()
     df_modelo = pd.DataFrame({
@@ -376,14 +378,22 @@ else:
             st.session_state["usuario_logado"] = None
             st.rerun()
 
-    # Abas por perfil
-    if usr["Perfil"] == "Administrador":
+    # Controle de navegação e abas conforme o perfil
+    perfil = usr["Perfil"]
+    
+    if perfil == "Administrador":
         aba_cadastro, aba_admin, aba_gestao_usuarios = st.tabs([
             "📝 Cadastro de Alunos", 
-            "📊 Área do Administrador (Dashboard)",
+            "📊 Dashboard Geral",
             "👥 Gestão de Usuários"
         ])
-    else:
+    elif perfil == "Gestor / Visualizador":
+        aba_cadastro, aba_admin = st.tabs([
+            "📝 Cadastro de Alunos", 
+            "📊 Dashboard Geral"
+        ])
+        aba_gestao_usuarios = None
+    else:  # Usuário Comum
         aba_cadastro, = st.tabs(["📝 Cadastro de Alunos"])
         aba_admin = None
         aba_gestao_usuarios = None
@@ -487,7 +497,7 @@ else:
                 st.error(f"❌ Erro ao processar o arquivo: {e}")
 
     # ---------------------------------------------------------
-    # ABA 2: DASHBOARD DO ADMINISTRADOR
+    # ABA 2: DASHBOARD (ADMINISTRADOR E GESTOR/VISUALIZADOR)
     # ---------------------------------------------------------
     if aba_admin:
         with aba_admin:
@@ -603,50 +613,53 @@ else:
                         use_container_width=True
                     )
             
-            with col_limp:
-                if not df.empty:
-                    if st.checkbox("⚠️ Confirmar exclusão total dos ALUNOS"):
-                        if st.button("🗑️ Limpar Base de Alunos", type="primary", use_container_width=True):
-                            usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
-                            if limpar_tabela_alunos(usuario_responsavel, len(df)):
-                                st.success("Base de dados de alunos limpa com sucesso! O histórico de logs foi mantido.")
-                                st.rerun()
+            # EXCLUSÃO DA BASE DE ALUNOS (Apenas para o Administrador)
+            if perfil == "Administrador":
+                with col_limp:
+                    if not df.empty:
+                        if st.checkbox("⚠️ Confirmar exclusão total dos ALUNOS"):
+                            if st.button("🗑️ Limpar Base de Alunos", type="primary", use_container_width=True):
+                                usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
+                                if limpar_tabela_alunos(usuario_responsavel, len(df)):
+                                    st.success("Base de dados de alunos limpa com sucesso! O histórico de logs foi mantido.")
+                                    st.rerun()
 
             # ---------------------------------------------------------
-            # AUDITORIA E HISTÓRICO DE LOGS (SISTEMA TOTALMENTE SEPARADO)
+            # AUDITORIA E HISTÓRICO DE LOGS (EXCLUSIVO PARA ADMINISTRADOR)
             # ---------------------------------------------------------
-            st.markdown("---")
-            st.markdown("### 🛡️ Histórico e Logs de Auditoria (Sistema Independente)")
-            st.caption("Esta tabela registra todas as ações de usuários (cadastros, importações e exclusões) e PERMANECE INTACTA mesmo quando a base de alunos é zerada.")
-            
-            df_logs = carregar_logs()
-            st.dataframe(df_logs, use_container_width=True, hide_index=True)
+            if perfil == "Administrador":
+                st.markdown("---")
+                st.markdown("### 🛡️ Histórico e Logs de Auditoria (Sistema Independente)")
+                st.caption("Esta tabela registra todas as ações de usuários (cadastros, importações e exclusões) e PERMANECE INTACTA mesmo quando a base de alunos é zerada.")
+                
+                df_logs = carregar_logs()
+                st.dataframe(df_logs, use_container_width=True, hide_index=True)
 
-            col_log_exp, col_log_limp, col_log_vazio = st.columns([1, 1, 2])
-            
-            with col_log_exp:
-                if not df_logs.empty:
-                    csv_logs = df_logs.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Exportar Logs em CSV",
-                        data=csv_logs,
-                        file_name="logs_auditoria_sistema.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
+                col_log_exp, col_log_limp, col_log_vazio = st.columns([1, 1, 2])
+                
+                with col_log_exp:
+                    if not df_logs.empty:
+                        csv_logs = df_logs.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Exportar Logs em CSV",
+                            data=csv_logs,
+                            file_name="logs_auditoria_sistema.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
 
-            with col_log_limp:
-                if not df_logs.empty:
-                    if st.checkbox("⚠️ Confirmar exclusão dos LOGS"):
-                        if st.button("🗑️ Limpar Histórico de Logs", use_container_width=True):
-                            if limpar_tabela_logs():
-                                st.success("Histórico de logs zerado com sucesso!")
-                                st.rerun()
+                with col_log_limp:
+                    if not df_logs.empty:
+                        if st.checkbox("⚠️ Confirmar exclusão dos LOGS"):
+                            if st.button("🗑️ Limpar Histórico de Logs", use_container_width=True):
+                                if limpar_tabela_logs():
+                                    st.success("Histórico de logs zerado com sucesso!")
+                                    st.rerun()
 
     # ---------------------------------------------------------
-    # ABA 3: GESTÃO DE USUÁRIOS E PERMISSÕES
+    # ABA 3: GESTÃO DE USUÁRIOS (EXCLUSIVO PARA ADMINISTRADOR)
     # ---------------------------------------------------------
-    if aba_gestao_usuarios:
+    if aba_gestao_usuarios and perfil == "Administrador":
         with aba_gestao_usuarios:
             st.subheader("👥 Controle de Acessos e Perfis de Usuários")
             
@@ -661,7 +674,7 @@ else:
                     novo_nome = st.text_input("Nome Completo *")
                     novo_usr = st.text_input("Login *")
                     nova_senha = st.text_input("Senha *", type="password")
-                    novo_perfil = st.selectbox("Perfil *", ["Usuário Comum", "Administrador"])
+                    novo_perfil = st.selectbox("Perfil *", OPCOES_PERFIL)
                     
                     btn_cad_usr = st.form_submit_button("➕ Criar Usuário")
                     if btn_cad_usr:
@@ -685,7 +698,7 @@ else:
                     perfil_atual = df_usrs_atual[df_usrs_atual["Usuario"] == usr_edit]["Perfil"].values[0]
                     st.info(f"Perfil Atual: **{perfil_atual}**")
                     
-                    novo_perfil_sel = st.selectbox("Novo Perfil", ["Usuário Comum", "Administrador"], key="select_novo_perfil")
+                    novo_perfil_sel = st.selectbox("Novo Perfil", OPCOES_PERFIL, key="select_novo_perfil")
                     
                     if st.button("✏️ Atualizar Perfil", use_container_width=True):
                         if atualizar_perfil_usuario(usr_edit, novo_perfil_sel):
