@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, date
 import io
+import base64
 from supabase import create_client, Client
 
 # Configuração da página
@@ -22,6 +23,52 @@ def init_supabase() -> Client:
     return create_client(url, key)
 
 supabase = init_supabase()
+
+# ---------------------------------------------------------
+# FUNÇÕES DE CONFIGURAÇÕES DE PERSONALIZAÇÃO (TITULOS E LOGO)
+# ---------------------------------------------------------
+def carregar_configuracoes():
+    """Carrega as configurações do sistema (Títulos e Logo em Base64) do Supabase"""
+    config_padrao = {
+        "titulo_login": "Sistema de Gestão Escolar",
+        "subtitulo_login": "Acesse com suas credenciais para continuar",
+        "titulo_interno": "Sistema de Gestão Escolar & Transferências",
+        "logo_base64": None
+    }
+    try:
+        response = supabase.table("configuracoes_sistema").select("*").eq("id", 1).execute()
+        if response.data and len(response.data) > 0:
+            dados = response.data[0]
+            return {
+                "titulo_login": dados.get("titulo_login") or config_padrao["titulo_login"],
+                "subtitulo_login": dados.get("subtitulo_login") or config_padrao["subtitulo_login"],
+                "titulo_interno": dados.get("titulo_interno") or config_padrao["titulo_interno"],
+                "logo_base64": dados.get("logo_base64")
+            }
+    except Exception:
+        pass
+    return config_padrao
+
+def salvar_configuracoes(titulo_login, subtitulo_login, titulo_interno, logo_base64=None, atualizar_logo=False):
+    """Salva os títulos e/ou imagem no Supabase"""
+    try:
+        dados_update = {
+            "id": 1,
+            "titulo_login": titulo_login,
+            "subtitulo_login": subtitulo_login,
+            "titulo_interno": titulo_interno
+        }
+        if atualizar_logo:
+            dados_update["logo_base64"] = logo_base64
+
+        supabase.table("configuracoes_sistema").upsert(dados_update).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar configurações do sistema: {e}")
+        return False
+
+# Carrega as configurações visuais ativas
+config_sys = carregar_configuracoes()
 
 # ---------------------------------------------------------
 # FUNÇÃO DE LOGS DE AUDITORIA (TABELA SEPARADA)
@@ -282,6 +329,14 @@ st.markdown("""
         border-radius: 20px;
         margin-bottom: 12px;
     }
+    
+    .custom-logo {
+        max-height: 90px;
+        max-width: 260px;
+        object-fit: contain;
+        display: block;
+        margin: 0 auto 15px auto;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -333,8 +388,14 @@ if "usuario_logado" not in st.session_state:
 if st.session_state["usuario_logado"] is None:
     col_logo, col_login, col_espaco = st.columns([1, 1.5, 1])
     with col_login:
-        st.markdown("<h2 style='text-align: center;'>🏫 Sistema de Gestão Escolar</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #64748b;'>Acesse com suas credenciais para continuar</p>", unsafe_allow_html=True)
+        # Exibição da Logo na Tela de Login
+        if config_sys.get("logo_base64"):
+            st.markdown(f'<img src="{config_sys["logo_base64"]}" class="custom-logo">', unsafe_allow_html=True)
+        else:
+            st.markdown("<h1 style='text-align: center; font-size: 50px; margin-bottom: 0;'>🏫</h1>", unsafe_allow_html=True)
+
+        st.markdown(f"<h2 style='text-align: center;'>{config_sys['titulo_login']}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: center; color: #64748b;'>{config_sys['subtitulo_login']}</p>", unsafe_allow_html=True)
         
         with st.form("form_login"):
             usr_input = st.text_input("Usuário")
@@ -367,16 +428,26 @@ if st.session_state["usuario_logado"] is None:
 # ---------------------------------------------------------
 else:
     usr = st.session_state["usuario_logado"]
-    col_title, col_user = st.columns([3, 1])
     
+    col_head_logo, col_title, col_user = st.columns([1, 3.5, 1.2])
+    
+    with col_head_logo:
+        if config_sys.get("logo_base64"):
+            st.markdown(f'<img src="{config_sys["logo_base64"]}" style="max-height: 60px; max-width: 100%; object-fit: contain;">', unsafe_allow_html=True)
+        else:
+            st.markdown("<h1 style='font-size: 40px; margin: 0;'>🏫</h1>", unsafe_allow_html=True)
+
     with col_title:
-        st.title("🏫 Sistema de Gestão Escolar & Transferências")
+        st.markdown(f"<h2 style='margin:0;'>{config_sys['titulo_interno']}</h2>", unsafe_allow_html=True)
+        
     with col_user:
         st.write(f"👤 **{usr['Nome']}**")
         st.caption(f"Perfil: {usr['Perfil']}")
         if st.button("🚪 Sair", key="btn_logout"):
             st.session_state["usuario_logado"] = None
             st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # Controle de navegação e abas conforme o perfil
     perfil = usr["Perfil"]
@@ -385,7 +456,7 @@ else:
         aba_cadastro, aba_admin, aba_gestao_usuarios = st.tabs([
             "📝 Cadastro de Alunos", 
             "📊 Dashboard Geral",
-            "👥 Gestão de Usuários"
+            "⚙️ Configurações & Usuários"
         ])
     elif perfil == "Gestor / Visualizador":
         aba_cadastro, aba_admin = st.tabs([
@@ -657,10 +728,50 @@ else:
                                     st.rerun()
 
     # ---------------------------------------------------------
-    # ABA 3: GESTÃO DE USUÁRIOS (EXCLUSIVO PARA ADMINISTRADOR)
+    # ABA 3: GESTÃO DE USUÁRIOS E CONFIGURAÇÕES (EXCLUSIVO PARA ADMINISTRADOR)
     # ---------------------------------------------------------
     if aba_gestao_usuarios and perfil == "Administrador":
         with aba_gestao_usuarios:
+            st.subheader("🎨 Personalização da Marca & Títulos do Sistema")
+            
+            with st.form("form_configuracoes_marca"):
+                col_cfg1, col_cfg2 = st.columns(2)
+                
+                with col_cfg1:
+                    novo_tit_login = st.text_input("Título na Tela de Login", value=config_sys['titulo_login'])
+                    novo_subtit_login = st.text_input("Subtítulo na Tela de Login", value=config_sys['subtitulo_login'])
+                    novo_tit_interno = st.text_input("Título Interno (Área Logada)", value=config_sys['titulo_interno'])
+                    
+                with col_cfg2:
+                    st.markdown("#### 🖼️ Logo do Sistema")
+                    if config_sys.get("logo_base64"):
+                        st.markdown("**Logo Atual:**")
+                        st.markdown(f'<img src="{config_sys["logo_base64"]}" style="max-height: 80px;">', unsafe_allow_html=True)
+                    
+                    logo_upload = st.file_uploader("Enviar Nova Logo (PNG, JPG, SVG)", type=["png", "jpg", "jpeg", "svg"])
+                    remover_logo = st.checkbox("❌ Remover Logo e Usar Ícone Padrão")
+
+                btn_salvar_config = st.form_submit_button("💾 Salvar Personalizações da Marca")
+                
+                if btn_salvar_config:
+                    logo_base64_final = config_sys.get("logo_base64")
+                    atualizou_logo = False
+                    
+                    if remover_logo:
+                        logo_base64_final = None
+                        atualizou_logo = True
+                    elif logo_upload is not None:
+                        bytes_data = logo_upload.getvalue()
+                        encoded = base64.b64encode(bytes_data).decode('utf-8')
+                        mime_type = logo_upload.type
+                        logo_base64_final = f"data:{mime_type};base64,{encoded}"
+                        atualizou_logo = True
+
+                    if salvar_configuracoes(novo_tit_login, novo_subtit_login, novo_tit_interno, logo_base64_final, atualizou_logo):
+                        st.success("✅ Configurações visuais e títulos atualizados com sucesso!")
+                        st.rerun()
+
+            st.markdown("---")
             st.subheader("👥 Controle de Acessos e Perfis de Usuários")
             
             df_usrs_atual = carregar_usuarios()
