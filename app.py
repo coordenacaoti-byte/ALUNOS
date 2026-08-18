@@ -9,7 +9,7 @@ from supabase import create_client, Client
 # Importações do ReportLab para geração de PDF
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # Configuração da página
@@ -640,7 +640,7 @@ else:
                 st.success(f"✅ **Arquivo carregado com sucesso!** Foram encontrados **{len(df_upload)}** registros.")
                 
                 with st.expander("🔍 Pré-visualizar dados importados", expanded=True):
-                    st.dataframe(df_upload, use_container_width=True)
+                    st.dataframe(df_upload, use_container_width=True, height=300)
                 
                 if st.button("🚀 Confirmar e Integrar Registros no Supabase", use_container_width=True):
                     usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
@@ -751,7 +751,13 @@ else:
             st.markdown("### 📋 Base de Dados Completa (Alunos)")
             
             cols_exibicao = [c for c in ["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações"] if c in df.columns]
-            st.dataframe(df[cols_exibicao] if not df.empty else df, use_container_width=True)
+            
+            # EXIBIÇÃO DA TABELA DE ALUNOS COM BARRA DE ROLAGEM APÓS 10 LINHAS (height=400)
+            st.dataframe(
+                df[cols_exibicao] if not df.empty else df, 
+                use_container_width=True,
+                height=400
+            )
             
             # BOTÕES EXPORTAR E LIMPAR ALUNOS
             col_exp, col_limp, col_vazio = st.columns([1, 1, 2])
@@ -798,7 +804,14 @@ else:
                 st.warning("⚠️ A Data Inicial não pode ser maior do que a Data Final.")
             else:
                 df_logs = carregar_logs(data_inicio=dt_inicio, data_fim=dt_fim)
-                st.dataframe(df_logs, use_container_width=True, hide_index=True)
+                
+                # EXIBIÇÃO DA TABELA DE LOGS COM BARRA DE ROLAGEM APÓS 10 LINHAS (height=400)
+                st.dataframe(
+                    df_logs, 
+                    use_container_width=True, 
+                    hide_index=True,
+                    height=400
+                )
 
                 col_pdf, col_log_csv, col_log_limp = st.columns([1.2, 1.2, 1.6])
                 
@@ -932,7 +945,7 @@ else:
             with col_lista:
                 st.markdown("#### 📋 Usuários Ativos")
                 if not df_usrs_atual.empty:
-                    st.dataframe(df_usrs_atual[["Nome", "Usuario", "Perfil"]], use_container_width=True, hide_index=True)
+                    st.dataframe(df_usrs_atual[["Nome", "Usuario", "Perfil"]], use_container_width=True, hide_index=True, height=300)
                     
                     st.markdown("---")
                     st.markdown("#### 🗑️ Remover Usuário")
