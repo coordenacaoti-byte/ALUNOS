@@ -146,7 +146,6 @@ def gerar_pdf_logs_bytes(df_logs, data_ini, data_fim, usuario_solicitante):
     elements = []
     styles = getSampleStyleSheet()
     
-    # Estilos de texto
     title_style = ParagraphStyle(
         'DocTitle',
         parent=styles['Heading1'],
@@ -168,14 +167,12 @@ def gerar_pdf_logs_bytes(df_logs, data_ini, data_fim, usuario_solicitante):
     style_cell = ParagraphStyle('CellText', parent=styles['Normal'], fontSize=8, fontName='Helvetica', leading=10)
     style_header = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.white)
 
-    # Título do Relatório
     elements.append(Paragraph(f"{config_sys['titulo_interno']} - Relatório de Auditoria", title_style))
     
     periodo_str = f"<b>Período:</b> {data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
     emissao_str = f"<b>Emissão:</b> {datetime.now().strftime('%d/%m/%Y %H:%M:%S')} por {usuario_solicitante}"
     elements.append(Paragraph(f"{periodo_str} | {emissao_str}", subtitle_style))
     
-    # Tabela
     data = [["Data/Hora", "Usuário Responsável", "Ação / Evento", "Detalhes do Registro"]]
     data[0] = [Paragraph(col, style_header) for col in data[0]]
 
@@ -187,7 +184,6 @@ def gerar_pdf_logs_bytes(df_logs, data_ini, data_fim, usuario_solicitante):
             Paragraph(str(row.get("Detalhes do Registro", "")), style_cell),
         ])
 
-    # Larguras das Colunas (Largura útil total ~732 pt)
     col_widths = [110, 140, 150, 332]
     
     tabela = Table(data, colWidths=col_widths, repeatRows=1)
@@ -330,6 +326,30 @@ def salvar_usuario(usr, pwd, nome, perfil):
         st.error(f"Erro ao salvar usuário no banco: {e}")
         return False
 
+def salvar_usuarios_em_lote(df_lote_usr, usuario_logado):
+    try:
+        renames = {
+            "Usuario": "usuario",
+            "Senha": "senha",
+            "Nome": "nome",
+            "Perfil": "perfil"
+        }
+        df_lote_usr = df_lote_usr.rename(columns=renames)
+        
+        # Garante Perfis válidos
+        df_lote_usr["perfil"] = df_lote_usr["perfil"].apply(
+            lambda p: p if p in OPCOES_PERFIL else "Usuário Comum"
+        )
+        
+        registros = df_lote_usr[["usuario", "senha", "nome", "perfil"]].fillna("").to_dict(orient="records")
+        supabase.table("usuarios").insert(registros).execute()
+        
+        registrar_log(usuario_logado, "Importação de Usuários em Lote", f"Importados {len(registros)} usuários via planilha.")
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar usuários em lote: {e}")
+        return False
+
 def atualizar_perfil_usuario(usr, novo_perfil):
     try:
         supabase.table("usuarios").update({"perfil": novo_perfil}).eq("usuario", usr).execute()
@@ -452,6 +472,7 @@ ESCOLAS = [
 OPCOES_BUSCA = ["Busca Ativa", "Sistema Presença (ENI)"]
 OPCOES_PERFIL = ["Usuário Comum", "Gestor / Visualizador", "Administrador"]
 
+# Modelos de Planilhas
 def gerar_planilha_modelo():
     buffer = io.BytesIO()
     df_modelo = pd.DataFrame({
@@ -466,6 +487,18 @@ def gerar_planilha_modelo():
     })
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         df_modelo.to_excel(writer, index=False, sheet_name='Modelo_Importacao')
+    return buffer.getvalue()
+
+def gerar_planilha_modelo_usuarios():
+    buffer = io.BytesIO()
+    df_modelo_usr = pd.DataFrame({
+        "Nome": ["João da Silva", "Maria Oliveira"],
+        "Usuario": ["joao.silva", "maria.gestora"],
+        "Senha": ["senha123", "senha456"],
+        "Perfil": ["Usuário Comum", "Gestor / Visualizador"]
+    })
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df_modelo_usr.to_excel(writer, index=False, sheet_name='Modelo_Usuarios')
     return buffer.getvalue()
 
 # Estado de Login na Sessão
@@ -538,7 +571,6 @@ else:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Controle de navegação e abas conforme o perfil
     perfil = usr["Perfil"]
     
     if perfil == "Administrador":
@@ -578,13 +610,12 @@ else:
                     format="DD/MM/YYYY"
                 )
                 
-                # NOVO CAMPO: Tipo de Busca
                 tipo_busca = st.selectbox("Tipo de Busca *", options=OPCOES_BUSCA)
 
             with col2:
                 escola_origem = st.selectbox("Escola de Origem *", options=ESCOLAS)
                 turma = st.text_input("Série / Turma *", placeholder="Ex: 5º Ano A")
-                endereco = st.text_input("Endereço Completo")
+                endereco = st.text_input("Endereço Completo *", placeholder="Rua, Número, Bairro")  # AGORA OBRIGATÓRIO
 
             observacoes = st.text_area("Observações")
 
@@ -592,16 +623,16 @@ else:
             btn_salvar = st.form_submit_button("💾 Salvar Cadastro")
             
             if btn_salvar:
-                if nome and cpf and escola_origem and tipo_busca:
+                if nome and cpf and escola_origem and tipo_busca and endereco.strip():
                     usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
                     if salvar_aluno(nome, cpf, str(data_nasc), tipo_busca, escola_origem, turma, endereco, observacoes, usuario_responsavel):
                         st.success(f"✅ Aluno(a) **{nome}** salvo no Supabase com sucesso!")
                 else:
-                    st.error("⚠️ Preencha todos os campos obrigatórios (*).")
+                    st.error("⚠️ Preencha todos os campos obrigatórios (*), incluindo o **Endereço Completo**.")
 
         st.markdown("---")
 
-        # IMPORTAÇÃO EM LOTE
+        # IMPORTAÇÃO EM LOTE DE ALUNOS
         st.markdown("<h3 style='margin-top: 20px; margin-bottom: 20px;'>📥 Importação de Alunos em Lote</h3>", unsafe_allow_html=True)
 
         col_left, col_right = st.columns(2, gap="medium")
@@ -754,14 +785,12 @@ else:
             
             cols_exibicao = [c for c in ["Nome", "CPF", "Data Nasc.", "Tipo de Busca", "Escola Origem", "Turma", "Endereço", "Observações"] if c in df.columns]
             
-            # EXIBIÇÃO DA TABELA DE ALUNOS COM BARRA DE ROLAGEM APÓS 10 LINHAS (height=400)
             st.dataframe(
                 df[cols_exibicao] if not df.empty else df, 
                 use_container_width=True,
                 height=400
             )
             
-            # BOTÕES EXPORTAR E LIMPAR ALUNOS
             col_exp, col_limp, col_vazio = st.columns([1, 1, 2])
             
             with col_exp:
@@ -775,7 +804,6 @@ else:
                         use_container_width=True
                     )
             
-            # EXCLUSÃO DA BASE DE ALUNOS (Apenas para Administrador)
             if perfil == "Administrador":
                 with col_limp:
                     if not df.empty:
@@ -783,18 +811,13 @@ else:
                             if st.button("🗑️ Limpar Base de Alunos", type="primary", use_container_width=True):
                                 usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
                                 if limpar_tabela_alunos(usuario_responsavel, len(df)):
-                                    st.success("Base de dados de alunos limpa com sucesso! O histórico de logs foi mantido.")
+                                    st.success("Base de dados de alunos limpa com sucesso!")
                                     st.rerun()
 
-            # ---------------------------------------------------------
-            # AUDITORIA, LOGS E GERADOR DE RELATÓRIO PDF
-            # (Disponível para Administrador e Gestor / Visualizador)
-            # ---------------------------------------------------------
             st.markdown("---")
             st.markdown("### 🛡️ Histórico e Logs de Auditoria do Sistema")
             st.caption("Esta tabela registra todas as ações de usuários (cadastros, importações e exclusões). Permanece intacta mesmo que a base de alunos seja zerada.")
             
-            # SELETOR DE PERÍODO PARA LOGS
             st.markdown("#### 📅 Filtrar Período e Gerar Relatório")
             col_d1, col_d2, col_d_espaco = st.columns([1, 1, 2])
             with col_d1:
@@ -807,7 +830,6 @@ else:
             else:
                 df_logs = carregar_logs(data_inicio=dt_inicio, data_fim=dt_fim)
                 
-                # EXIBIÇÃO DA TABELA DE LOGS COM BARRA DE ROLAGEM APÓS 10 LINHAS (height=400)
                 st.dataframe(
                     df_logs, 
                     use_container_width=True, 
@@ -817,7 +839,6 @@ else:
 
                 col_pdf, col_log_csv, col_log_limp = st.columns([1.2, 1.2, 1.6])
                 
-                # BOTÃO GERAR RELATÓRIO PDF (ADMIN + GESTOR)
                 with col_pdf:
                     if not df_logs.empty:
                         usuario_solic = f"{usr['Nome']} ({usr['Perfil']})"
@@ -831,7 +852,6 @@ else:
                             use_container_width=True
                         )
 
-                # BOTÃO EXPORTAR CSV LOGS
                 with col_log_csv:
                     if not df_logs.empty:
                         csv_logs = df_logs.to_csv(index=False).encode('utf-8')
@@ -843,7 +863,6 @@ else:
                             use_container_width=True
                         )
 
-                # APAGAR LOGS (APENAS ADMINISTRADOR)
                 if perfil == "Administrador":
                     with col_log_limp:
                         if not df_logs.empty:
@@ -904,9 +923,9 @@ else:
             
             col_novo, col_alterar, col_lista = st.columns([1, 1, 1.2], gap="large")
             
-            # 1. CRIAR NOVO USUÁRIO
+            # 1. CRIAR NOVO USUÁRIO INDIVIDUAL
             with col_novo:
-                st.markdown("#### ➕ Novo Usuário")
+                st.markdown("#### ➕ Novo Usuário Individual")
                 with st.form("form_novo_usuario", clear_on_submit=True):
                     novo_nome = st.text_input("Nome Completo *")
                     novo_usr = st.text_input("Login *")
@@ -920,6 +939,8 @@ else:
                                 st.error("⚠️ Este login já existe.")
                             else:
                                 if salvar_usuario(novo_usr, nova_senha, novo_nome, novo_perfil):
+                                    usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
+                                    registrar_log(usuario_responsavel, "Criação de Usuário", f"Criado usuário {novo_usr} ({novo_perfil})")
                                     st.success(f"✅ Usuário **{novo_usr}** criado!")
                                     st.rerun()
                         else:
@@ -947,7 +968,7 @@ else:
             with col_lista:
                 st.markdown("#### 📋 Usuários Ativos")
                 if not df_usrs_atual.empty:
-                    st.dataframe(df_usrs_atual[["Nome", "Usuario", "Perfil"]], use_container_width=True, hide_index=True, height=300)
+                    st.dataframe(df_usrs_atual[["Nome", "Usuario", "Perfil"]], use_container_width=True, hide_index=True, height=250)
                     
                     st.markdown("---")
                     st.markdown("#### 🗑️ Remover Usuário")
@@ -962,3 +983,64 @@ else:
                         st.caption("Sem usuários secundários para remoção.")
                 else:
                     st.info("Nenhum usuário cadastrado no banco.")
+
+            # ---------------------------------------------------------
+            # IMPORTAÇÃO EM LOTE DE USUÁRIOS (NOVO RECURSO)
+            # ---------------------------------------------------------
+            st.markdown("---")
+            st.subheader("📥 Importação de Usuários em Lote")
+
+            col_u1, col_u2 = st.columns(2, gap="medium")
+
+            with col_u1:
+                st.markdown("""
+                <div class="import-card">
+                    <div>
+                        <span class="step-badge">Passo 1</span>
+                        <div class="card-header-title">📄 Modelo de Usuários</div>
+                        <div class="card-description">
+                            Baixe o modelo com as colunas: <b>Nome, Usuario, Senha, Perfil</b>.
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.download_button(
+                    label="📥 Baixar Planilha Modelo de Usuários (.xlsx)",
+                    data=gerar_planilha_modelo_usuarios(),
+                    file_name="modelo_importacao_usuarios.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+
+            with col_u2:
+                st.markdown("""
+                <div class="import-card">
+                    <div>
+                        <span class="step-badge" style="background-color: #d1fae5; color: #059669;">Passo 2</span>
+                        <div class="card-header-title">📤 Upload da Planilha de Usuários</div>
+                        <div class="card-description">
+                            Envie a planilha preenchida (.XLSX ou .CSV) para cadastrar os novos usuários.
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                arquivo_usr = st.file_uploader("Selecione o arquivo de usuários", type=["xlsx", "csv"], key="uploader_usr_lote", label_visibility="collapsed")
+
+            if arquivo_usr is not None:
+                try:
+                    df_usr_upload = pd.read_csv(arquivo_usr) if arquivo_usr.name.endswith('.csv') else pd.read_excel(arquivo_usr)
+                    st.success(f"✅ **Arquivo de usuários carregado!** Foram encontrados **{len(df_usr_upload)}** registros.")
+                    
+                    with st.expander("🔍 Pré-visualizar Usuários para Importação", expanded=True):
+                        st.dataframe(df_usr_upload, use_container_width=True, height=200)
+                    
+                    if st.button("🚀 Cadastrar Todos os Usuários no Banco", use_container_width=True):
+                        usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
+                        if salvar_usuarios_em_lote(df_usr_upload, usuario_responsavel):
+                            st.balloons()
+                            st.success(f"🎉 **{len(df_usr_upload)} usuários** foram importados com sucesso!")
+                            st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Erro ao processar arquivo de usuários: {e}")
