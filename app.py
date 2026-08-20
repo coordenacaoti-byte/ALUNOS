@@ -219,6 +219,7 @@ def carregar_alunos():
                 "nome": "Nome",
                 "cpf": "CPF",
                 "data_nasc": "Data Nasc.",
+                "tipo_busca": "Tipo de Busca",
                 "escola_origem": "Escola Origem",
                 "turma": "Turma",
                 "observacoes": "Observações"
@@ -230,18 +231,19 @@ def carregar_alunos():
             if "Data Nasc." in df.columns:
                 df["Data Nasc."] = pd.to_datetime(df["Data Nasc."], errors='coerce').dt.strftime('%d/%m/%Y')
         else:
-            df = pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações"])
+            df = pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Tipo de Busca", "Escola Origem", "Turma", "Endereço", "Observações"])
         return df
     except Exception as e:
         st.error(f"Erro ao carregar alunos: {e}")
-        return pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações"])
+        return pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Tipo de Busca", "Escola Origem", "Turma", "Endereço", "Observações"])
 
-def salvar_aluno(nome, cpf, data_nasc, escola_origem, turma, endereco, observacoes, usuario_logado):
+def salvar_aluno(nome, cpf, data_nasc, tipo_busca, escola_origem, turma, endereco, observacoes, usuario_logado):
     try:
         dados = {
             "nome": nome,
             "cpf": cpf,
             "data_nasc": str(data_nasc),
+            "tipo_busca": tipo_busca,
             "escola_origem": escola_origem,
             "turma": turma,
             "endereco": endereco,
@@ -249,7 +251,7 @@ def salvar_aluno(nome, cpf, data_nasc, escola_origem, turma, endereco, observaco
         }
         supabase.table("alunos").insert(dados).execute()
         
-        detalhes = f"Aluno: {nome} | CPF: {cpf} | Escola: {escola_origem} | Turma: {turma}"
+        detalhes = f"Aluno: {nome} | CPF: {cpf} | Tipo Busca: {tipo_busca} | Escola: {escola_origem} | Turma: {turma}"
         registrar_log(usuario_logado, "Cadastro Individual", detalhes)
         return True
     except Exception as e:
@@ -263,6 +265,7 @@ def salvar_alunos_em_lote(df_lote, usuario_logado):
             "Nome": "nome",
             "CPF": "cpf",
             "Data Nasc.": "data_nasc",
+            "Tipo de Busca": "tipo_busca",
             "Escola Origem": "escola_origem",
             "Turma": "turma",
             "Observações": "observacoes"
@@ -446,6 +449,7 @@ ESCOLAS = [
     "Edjanete Maria Valença da Silveira"
 ]
 
+OPCOES_BUSCA = ["Busca Ativa", "Sistema Presença (ENI)"]
 OPCOES_PERFIL = ["Usuário Comum", "Gestor / Visualizador", "Administrador"]
 
 def gerar_planilha_modelo():
@@ -454,6 +458,7 @@ def gerar_planilha_modelo():
         "Nome": ["Exemplo Nome Aluno"],
         "CPF": ["000.000.000-00"],
         "Data Nasc.": ["2015-01-01"],
+        "Tipo de Busca": ["Busca Ativa"],
         "Escola Origem": ["Adélia Carneiro Pedrosa"],
         "Turma": ["1º Ano A"],
         "Endereço": ["Rua Exemplo, Nº 100, Bairro Centenário"],
@@ -572,6 +577,10 @@ else:
                     max_value=date(2026, 12, 31),
                     format="DD/MM/YYYY"
                 )
+                
+                # NOVO CAMPO: Tipo de Busca
+                tipo_busca = st.selectbox("Tipo de Busca *", options=OPCOES_BUSCA)
+
             with col2:
                 escola_origem = st.selectbox("Escola de Origem *", options=ESCOLAS)
                 turma = st.text_input("Série / Turma *", placeholder="Ex: 5º Ano A")
@@ -583,9 +592,9 @@ else:
             btn_salvar = st.form_submit_button("💾 Salvar Cadastro")
             
             if btn_salvar:
-                if nome and cpf and escola_origem:
+                if nome and cpf and escola_origem and tipo_busca:
                     usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
-                    if salvar_aluno(nome, cpf, str(data_nasc), escola_origem, turma, endereco, observacoes, usuario_responsavel):
+                    if salvar_aluno(nome, cpf, str(data_nasc), tipo_busca, escola_origem, turma, endereco, observacoes, usuario_responsavel):
                         st.success(f"✅ Aluno(a) **{nome}** salvo no Supabase com sucesso!")
                 else:
                     st.error("⚠️ Preencha todos os campos obrigatórios (*).")
@@ -731,26 +740,19 @@ else:
                     st.plotly_chart(fig_barras, use_container_width=True)
                     
             with col_g2:
-                st.markdown("### 🍕 Distribuição por Faixa Etária")
-                if not df.empty and 'Idade' in df.columns:
-                    def faixa_etaria(idade):
-                        if pd.isna(idade): return 'Não informada'
-                        if idade <= 10: return 'Até 10 anos'
-                        elif 11 <= idade <= 14: return '11 a 14 anos'
-                        else: return '15+ anos'
-                        
-                    df['Faixa'] = df['Idade'].apply(faixa_etaria)
-                    df_faixa = df['Faixa'].value_counts().reset_index()
-                    df_faixa.columns = ['Faixa', 'Qtd']
+                st.markdown("### 🍕 Distribuição por Tipo de Busca")
+                if not df.empty and 'Tipo de Busca' in df.columns:
+                    df_tipo = df['Tipo de Busca'].value_counts().reset_index()
+                    df_tipo.columns = ['Tipo de Busca', 'Qtd']
                     
-                    fig_donut = px.pie(df_faixa, names='Faixa', values='Qtd', hole=0.6, color_discrete_sequence=['#10b981', '#3b82f6', '#f59e0b'])
+                    fig_donut = px.pie(df_tipo, names='Tipo de Busca', values='Qtd', hole=0.6, color_discrete_sequence=['#4f46e5', '#10b981'])
                     fig_donut.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=10, b=10), showlegend=True)
                     st.plotly_chart(fig_donut, use_container_width=True)
 
             st.markdown("---")
             st.markdown("### 📋 Base de Dados Completa (Alunos)")
             
-            cols_exibicao = [c for c in ["Nome", "CPF", "Data Nasc.", "Escola Origem", "Turma", "Endereço", "Observações"] if c in df.columns]
+            cols_exibicao = [c for c in ["Nome", "CPF", "Data Nasc.", "Tipo de Busca", "Escola Origem", "Turma", "Endereço", "Observações"] if c in df.columns]
             
             # EXIBIÇÃO DA TABELA DE ALUNOS COM BARRA DE ROLAGEM APÓS 10 LINHAS (height=400)
             st.dataframe(
