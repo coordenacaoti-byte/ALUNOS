@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
 import io
 import base64
 from supabase import create_client, Client
@@ -11,6 +12,19 @@ from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+# ---------------------------------------------------------
+# FUSO HORÁRIO LOCAL (UTC-3 / PERNAMBUCO)
+# ---------------------------------------------------------
+FUSO_RECIFE = ZoneInfo("America/Recife")
+
+def obter_data_hora_atual() -> str:
+    """Retorna a data e hora atual formatada no fuso horário local de Pernambuco."""
+    return datetime.now(FUSO_RECIFE).strftime("%d/%m/%Y %H:%M:%S")
+
+def obter_iso_atual() -> str:
+    """Retorna o timestamp ISO 8601 com offset para gravação precisa no Supabase."""
+    return datetime.now(FUSO_RECIFE).isoformat()
 
 # Configuração da página
 st.set_page_config(
@@ -31,7 +45,7 @@ def init_supabase() -> Client:
 supabase = init_supabase()
 
 # ---------------------------------------------------------
-# FUNÇÕES DE CONFIGURAÇÕES DE PERSONALIZAÇÃO (TITULOS E LOGO)
+# FUNÇÕES DE CONFIGURAÇÕES DE PERSONALIZAÇÃO (TÍTULOS E LOGO)
 # ---------------------------------------------------------
 def carregar_configuracoes():
     """Carrega as configurações do sistema (Títulos e Logo em Base64) do Supabase"""
@@ -77,34 +91,36 @@ def salvar_configuracoes(titulo_login, subtitulo_login, titulo_interno, logo_bas
 config_sys = carregar_configuracoes()
 
 # ---------------------------------------------------------
-# FUNÇÃO DE LOGS DE AUDITORIA (TABELA SEPARADA)
+# FUNÇÃO DE LOGS DE AUDITORIA (COM CORREÇÃO DE HORÁRIO)
 # ---------------------------------------------------------
 def registrar_log(usuario: str, acao: str, detalhes: str = ""):
-    """Grava logs em uma tabela independente 'logs_auditoria' no Supabase"""
+    """Grava logs em uma tabela independente 'logs_auditoria' com timezone local"""
     try:
         dados_log = {
             "usuario": usuario,
             "acao": acao,
-            "detalhes": detalhes
+            "detalhes": detalhes,
+            "data_hora": obter_iso_atual()
         }
         supabase.table("logs_auditoria").insert(dados_log).execute()
     except Exception as e:
         st.error(f"Erro ao registrar log de auditoria: {e}")
 
 def carregar_logs(data_inicio=None, data_fim=None):
-    """Carrega o histórico de logs gravados na tabela logs_auditoria com filtro opcional por período"""
+    """Carrega o histórico de logs ajustando o fuso horário para UTC-3"""
     try:
         query = supabase.table("logs_auditoria").select("*")
         
         if data_inicio:
-            iso_inicio = f"{data_inicio}T00:00:00"
+            iso_inicio = f"{data_inicio}T00:00:00-03:00"
             query = query.gte("data_hora", iso_inicio)
         if data_fim:
-            iso_fim = f"{data_fim}T23:59:59"
+            iso_fim = f"{data_fim}T23:59:59-03:00"
             query = query.lte("data_hora", iso_fim)
             
         response = query.order("data_hora", desc=True).execute()
         df_logs = pd.DataFrame(response.data)
+        
         if not df_logs.empty:
             renames = {
                 "usuario": "Usuário Responsável",
@@ -114,12 +130,17 @@ def carregar_logs(data_inicio=None, data_fim=None):
             }
             df_logs = df_logs.rename(columns=renames)
             if "Data/Hora" in df_logs.columns:
-                df_logs["Data/Hora"] = pd.to_datetime(df_logs["Data/Hora"], errors='coerce').dt.strftime('%d/%m/%Y %H:%M:%S')
+                # Converte os timestamps do banco para o fuso local de Pernambuco
+                df_logs["Data/Hora"] = (
+                    pd.to_datetime(df_logs["Data/Hora"], errors='coerce')
+                    .dt.tz_convert('America/Recife')
+                    .dt.strftime('%d/%m/%Y %H:%M:%S')
+                )
             cols_ordem = [c for c in ["Data/Hora", "Usuário Responsável", "Ação / Evento", "Detalhes do Registro"] if c in df_logs.columns]
             return df_logs[cols_ordem]
         else:
             return pd.DataFrame(columns=["Data/Hora", "Usuário Responsável", "Ação / Evento", "Detalhes do Registro"])
-    except Exception as e:
+    except Exception:
         return pd.DataFrame(columns=["Data/Hora", "Usuário Responsável", "Ação / Evento", "Detalhes do Registro"])
 
 def limpar_tabela_logs():
@@ -170,7 +191,7 @@ def gerar_pdf_logs_bytes(df_logs, data_ini, data_fim, usuario_solicitante):
     elements.append(Paragraph(f"{config_sys['titulo_interno']} - Relatório de Auditoria", title_style))
     
     periodo_str = f"<b>Período:</b> {data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
-    emissao_str = f"<b>Emissão:</b> {datetime.now().strftime('%d/%m/%Y %H:%M:%S')} por {usuario_solicitante}"
+    emissao_str = f"<b>Emissão:</b> {obter_data_hora_atual()} por {usuario_solicitante}"
     elements.append(Paragraph(f"{periodo_str} | {emissao_str}", subtitle_style))
     
     data = [["Data/Hora", "Usuário Responsável", "Ação / Evento", "Detalhes do Registro"]]
@@ -243,7 +264,8 @@ def salvar_aluno(nome, cpf, data_nasc, tipo_busca, escola_origem, turma, enderec
             "escola_origem": escola_origem,
             "turma": turma,
             "endereco": endereco,
-            "observacoes": observacoes
+            "observacoes": observacoes,
+            "created_at": obter_iso_atual()
         }
         supabase.table("alunos").insert(dados).execute()
         
@@ -275,6 +297,7 @@ def salvar_alunos_em_lote(df_lote, usuario_logado):
         if "data_nasc" in df_lote.columns:
             df_lote["data_nasc"] = df_lote["data_nasc"].astype(str)
             
+        df_lote["created_at"] = obter_iso_atual()
         registros = df_lote.fillna("").to_dict(orient="records")
         supabase.table("alunos").insert(registros).execute()
         
@@ -335,8 +358,6 @@ def salvar_usuarios_em_lote(df_lote_usr, usuario_logado):
             "Perfil": "perfil"
         }
         df_lote_usr = df_lote_usr.rename(columns=renames)
-        
-        # Garante Perfis válidos
         df_lote_usr["perfil"] = df_lote_usr["perfil"].apply(
             lambda p: p if p in OPCOES_PERFIL else "Usuário Comum"
         )
@@ -615,7 +636,7 @@ else:
             with col2:
                 escola_origem = st.selectbox("Escola de Origem *", options=ESCOLAS)
                 turma = st.text_input("Série / Turma *", placeholder="Ex: 5º Ano A")
-                endereco = st.text_input("Endereço Completo *", placeholder="Rua, Número, Bairro")  # AGORA OBRIGATÓRIO
+                endereco = st.text_input("Endereço Completo *", placeholder="Rua, Número, Bairro")
 
             observacoes = st.text_area("Observações")
 
@@ -702,7 +723,7 @@ else:
             
             if not df.empty and "Data Nasc." in df.columns:
                 df['Data_dt'] = pd.to_datetime(df['Data Nasc.'], format='%d/%m/%Y', errors='coerce')
-                ano_atual = datetime.now().year
+                ano_atual = datetime.now(FUSO_RECIFE).year
                 df['Idade'] = ano_atual - df['Data_dt'].dt.year
                 media_idade = round(df['Idade'].mean(), 1) if not df['Idade'].isna().all() else 0.0
             else:
@@ -758,289 +779,169 @@ else:
                     </div>
                 """, unsafe_allow_html=True)
 
-            col_g1, col_g2 = st.columns(2)
-            
-            with col_g1:
-                st.markdown("### 📊 Cadastros por Escola")
-                if not df.empty and "Escola Origem" in df.columns:
-                    df_escola = df['Escola Origem'].value_counts().reset_index()
-                    df_escola.columns = ['Escola', 'Qtd']
-                    
-                    fig_barras = px.bar(df_escola, x='Escola', y='Qtd', color_discrete_sequence=['#4f46e5'])
-                    fig_barras.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=10, b=10), xaxis_title=None, yaxis_title=None)
-                    st.plotly_chart(fig_barras, use_container_width=True)
-                    
-            with col_g2:
-                st.markdown("### 🍕 Distribuição por Tipo de Busca")
-                if not df.empty and 'Tipo de Busca' in df.columns:
-                    df_tipo = df['Tipo de Busca'].value_counts().reset_index()
-                    df_tipo.columns = ['Tipo de Busca', 'Qtd']
-                    
-                    fig_donut = px.pie(df_tipo, names='Tipo de Busca', values='Qtd', hole=0.6, color_discrete_sequence=['#4f46e5', '#10b981'])
-                    fig_donut.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=10, r=10, t=10, b=10), showlegend=True)
-                    st.plotly_chart(fig_donut, use_container_width=True)
+            st.markdown("<br>", unsafe_allow_html=True)
 
+            # GRÁFICOS
+            if not df.empty:
+                col_g1, col_g2 = st.columns(2)
+                with col_g1:
+                    fig_escola = px.bar(
+                        df['Escola Origem'].value_counts().reset_index(),
+                        x='count', y='Escola Origem', orientation='h',
+                        title="Alunos por Escola de Origem",
+                        labels={'count': 'Quantidade', 'Escola Origem': 'Escola'},
+                        color_discrete_sequence=['#4f46e5']
+                    )
+                    fig_escola.update_layout(height=350, margin=dict(l=10, r=10, t=40, b=10))
+                    st.plotly_chart(fig_escola, use_container_width=True)
+
+                with col_g2:
+                    fig_busca = px.pie(
+                        df['Tipo de Busca'].value_counts().reset_index(),
+                        names='Tipo de Busca', values='count',
+                        title="Distribuição por Tipo de Busca",
+                        color_discrete_sequence=['#4f46e5', '#06b6d4']
+                    )
+                    fig_busca.update_layout(height=350, margin=dict(l=10, r=10, t=40, b=10))
+                    st.plotly_chart(fig_busca, use_container_width=True)
+            
             st.markdown("---")
-            st.markdown("### 📋 Base de Dados Completa (Alunos)")
-            
-            cols_exibicao = [c for c in ["Nome", "CPF", "Data Nasc.", "Tipo de Busca", "Escola Origem", "Turma", "Endereço", "Observações"] if c in df.columns]
-            
-            st.dataframe(
-                df[cols_exibicao] if not df.empty else df, 
-                use_container_width=True,
-                height=400
-            )
-            
-            col_exp, col_limp, col_vazio = st.columns([1, 1, 2])
-            
-            with col_exp:
-                if not df.empty:
-                    csv = df[cols_exibicao].to_csv(index=False).encode('utf-8')
+            st.subheader("📊 Tabela Completa de Alunos Cadastrados")
+            st.dataframe(df, use_container_width=True)
+
+            # SESSÃO DE LOGS E AUDITORIA
+            st.markdown("---")
+            st.subheader("🛡️ Histórico e Logs de Auditoria do Sistema")
+
+            c_data1, c_data2 = st.columns(2)
+            hoje = datetime.now(FUSO_RECIFE).date()
+            inicio_mes = hoje.replace(day=1)
+
+            with c_data1:
+                dt_ini = st.date_input("Data Inicial do Filtro", value=inicio_mes, format="DD/MM/YYYY")
+            with c_data2:
+                dt_fim = st.date_input("Data Final do Filtro", value=hoje, format="DD/MM/YYYY")
+
+            df_logs = carregar_logs(data_inicio=dt_ini, data_fim=dt_fim)
+            st.dataframe(df_logs, use_container_width=True)
+
+            c_btn1, c_btn2, c_btn3 = st.columns([1, 1, 1])
+            with c_btn1:
+                if not df_logs.empty:
+                    pdf_bytes = gerar_pdf_logs_bytes(df_logs, dt_ini, dt_fim, f"{usr['Nome']} ({usr['Usuario']})")
                     st.download_button(
-                        label="📥 Exportar CSV dos Alunos",
-                        data=csv,
-                        file_name="base_alunos_supabase.csv",
+                        label="📄 Baixar Relatório em PDF",
+                        data=pdf_bytes,
+                        file_name=f"relatorio_auditoria_{dt_ini}_{dt_fim}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+            with c_btn2:
+                if not df_logs.empty:
+                    csv_bytes = df_logs.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Exportar Logs em CSV",
+                        data=csv_bytes,
+                        file_name=f"logs_auditoria_{dt_ini}_{dt_fim}.csv",
                         mime="text/csv",
                         use_container_width=True
                     )
-            
-            if perfil == "Administrador":
-                with col_limp:
-                    if not df.empty:
-                        if st.checkbox("⚠️ Confirmar exclusão total dos ALUNOS"):
-                            if st.button("🗑️ Limpar Base de Alunos", type="primary", use_container_width=True):
-                                usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
-                                if limpar_tabela_alunos(usuario_responsavel, len(df)):
-                                    st.success("Base de dados de alunos limpa com sucesso!")
-                                    st.rerun()
-
-            st.markdown("---")
-            st.markdown("### 🛡️ Histórico e Logs de Auditoria do Sistema")
-            st.caption("Esta tabela registra todas as ações de usuários (cadastros, importações e exclusões). Permanece intacta mesmo que a base de alunos seja zerada.")
-            
-            st.markdown("#### 📅 Filtrar Período e Gerar Relatório")
-            col_d1, col_d2, col_d_espaco = st.columns([1, 1, 2])
-            with col_d1:
-                dt_inicio = st.date_input("Data Inicial", value=date.today() - timedelta(days=30), format="DD/MM/YYYY", key="log_dt_ini")
-            with col_d2:
-                dt_fim = st.date_input("Data Final", value=date.today(), format="DD/MM/YYYY", key="log_dt_fim")
-
-            if dt_inicio > dt_fim:
-                st.warning("⚠️ A Data Inicial não pode ser maior do que a Data Final.")
-            else:
-                df_logs = carregar_logs(data_inicio=dt_inicio, data_fim=dt_fim)
-                
-                st.dataframe(
-                    df_logs, 
-                    use_container_width=True, 
-                    hide_index=True,
-                    height=400
-                )
-
-                col_pdf, col_log_csv, col_log_limp = st.columns([1.2, 1.2, 1.6])
-                
-                with col_pdf:
-                    if not df_logs.empty:
-                        usuario_solic = f"{usr['Nome']} ({usr['Perfil']})"
-                        pdf_data = gerar_pdf_logs_bytes(df_logs, dt_inicio, dt_fim, usuario_solic)
-                        
-                        st.download_button(
-                            label="📄 Baixar Relatório em PDF",
-                            data=pdf_data,
-                            file_name=f"relatorio_logs_{dt_inicio.strftime('%d%m%Y')}_a_{dt_fim.strftime('%d%m%Y')}.pdf",
-                            mime="application/pdf",
-                            use_container_width=True
-                        )
-
-                with col_log_csv:
-                    if not df_logs.empty:
-                        csv_logs = df_logs.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label="📥 Exportar Logs em CSV",
-                            data=csv_logs,
-                            file_name="logs_auditoria_sistema.csv",
-                            mime="text/csv",
-                            use_container_width=True
-                        )
-
+            with c_btn3:
                 if perfil == "Administrador":
-                    with col_log_limp:
-                        if not df_logs.empty:
-                            if st.checkbox("⚠️ Confirmar exclusão dos LOGS"):
-                                if st.button("🗑️ Limpar Histórico de Logs", use_container_width=True):
-                                    if limpar_tabela_logs():
-                                        st.success("Histórico de logs zerado com sucesso!")
-                                        st.rerun()
+                    confirmar_limpeza = st.checkbox("⚠️ Confirmar exclusão dos LOGS")
+                    if st.button("🗑️ Limpar Logs", use_container_width=True, disabled=not confirmar_limpeza):
+                        if limpar_tabela_logs():
+                            st.success("Histórico de logs limpo com sucesso!")
+                            st.rerun()
 
     # ---------------------------------------------------------
-    # ABA 3: GESTÃO DE USUÁRIOS E CONFIGURAÇÕES (EXCLUSIVO PARA ADMINISTRADOR)
+    # ABA 3: GESTÃO DE USUÁRIOS E CONFIGURAÇÕES (APENAS ADMINISTRADOR)
     # ---------------------------------------------------------
-    if aba_gestao_usuarios and perfil == "Administrador":
+    if aba_gestao_usuarios:
         with aba_gestao_usuarios:
-            st.subheader("🎨 Personalização da Marca & Títulos do Sistema")
-            
-            with st.form("form_configuracoes_marca"):
-                col_cfg1, col_cfg2 = st.columns(2)
-                
-                with col_cfg1:
-                    novo_tit_login = st.text_input("Título na Tela de Login", value=config_sys['titulo_login'])
-                    novo_subtit_login = st.text_input("Subtítulo na Tela de Login", value=config_sys['subtitulo_login'])
-                    novo_tit_interno = st.text_input("Título Interno (Área Logada)", value=config_sys['titulo_interno'])
-                    
-                with col_cfg2:
-                    st.markdown("#### 🖼️ Logo do Sistema")
-                    if config_sys.get("logo_base64"):
-                        st.markdown("**Logo Atual:**")
-                        st.markdown(f'<img src="{config_sys["logo_base64"]}" style="max-height: 80px;">', unsafe_allow_html=True)
-                    
-                    logo_upload = st.file_uploader("Enviar Nova Logo (PNG, JPG, SVG)", type=["png", "jpg", "jpeg", "svg"])
-                    remover_logo = st.checkbox("❌ Remover Logo e Usar Ícone Padrão")
+            st.subheader("⚙️ Personalização do Sistema")
+            with st.form("form_config_visuais"):
+                c_conf1, c_conf2 = st.columns(2)
+                with c_conf1:
+                    tit_login = st.text_input("Título da Tela de Login", value=config_sys["titulo_login"])
+                    sub_login = st.text_input("Subtítulo da Tela de Login", value=config_sys["subtitulo_login"])
+                with c_conf2:
+                    tit_interno = st.text_input("Título Interno (Cabeçalho)", value=config_sys["titulo_interno"])
+                    logo_file = st.file_uploader("Upload da Logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
 
-                btn_salvar_config = st.form_submit_button("💾 Salvar Personalizações da Marca")
-                
+                btn_salvar_config = st.form_submit_button("💾 Salvar Personalização")
                 if btn_salvar_config:
-                    logo_base64_final = config_sys.get("logo_base64")
-                    atualizou_logo = False
-                    
-                    if remover_logo:
-                        logo_base64_final = None
-                        atualizou_logo = True
-                    elif logo_upload is not None:
-                        bytes_data = logo_upload.getvalue()
-                        encoded = base64.b64encode(bytes_data).decode('utf-8')
-                        mime_type = logo_upload.type
-                        logo_base64_final = f"data:{mime_type};base64,{encoded}"
-                        atualizou_logo = True
+                    b64_str = config_sys.get("logo_base64")
+                    alt_logo = False
+                    if logo_file is not None:
+                        encoded = base64.b64encode(logo_file.read()).decode('utf-8')
+                        b64_str = f"data:{logo_file.type};base64,{encoded}"
+                        alt_logo = True
 
-                    if salvar_configuracoes(novo_tit_login, novo_subtit_login, novo_tit_interno, logo_base64_final, atualizou_logo):
-                        st.success("✅ Configurações visuais e títulos atualizados com sucesso!")
+                    if salvar_configuracoes(tit_login, sub_login, tit_interno, b64_str, alt_logo):
+                        st.success("Configurações atualizadas com sucesso!")
                         st.rerun()
 
             st.markdown("---")
-            st.subheader("👥 Controle de Acessos e Perfis de Usuários")
-            
-            df_usrs_atual = carregar_usuarios()
-            
-            col_novo, col_alterar, col_lista = st.columns([1, 1, 1.2], gap="large")
-            
-            # 1. CRIAR NOVO USUÁRIO INDIVIDUAL
-            with col_novo:
-                st.markdown("#### ➕ Novo Usuário Individual")
+            st.subheader("👥 Gestão de Usuários")
+
+            df_usuarios = carregar_usuarios()
+            st.dataframe(df_usuarios, use_container_width=True)
+
+            with st.expander("➕ Cadastrar Novo Usuário"):
                 with st.form("form_novo_usuario", clear_on_submit=True):
-                    novo_nome = st.text_input("Nome Completo *")
-                    novo_usr = st.text_input("Login *")
-                    nova_senha = st.text_input("Senha *", type="password")
-                    novo_perfil = st.selectbox("Perfil *", OPCOES_PERFIL)
-                    
-                    btn_cad_usr = st.form_submit_button("➕ Criar Usuário")
-                    if btn_cad_usr:
+                    c_u1, c_u2 = st.columns(2)
+                    with c_u1:
+                        novo_nome = st.text_input("Nome Completo")
+                        novo_usr = st.text_input("Nome de Usuário (Login)")
+                    with c_u2:
+                        nova_senha = st.text_input("Senha", type="password")
+                        novo_perfil = st.selectbox("Perfil de Acesso", options=OPCOES_PERFIL)
+
+                    if st.form_submit_button("💾 Cadastrar Usuário"):
                         if novo_nome and novo_usr and nova_senha:
-                            if not df_usrs_atual.empty and novo_usr in df_usrs_atual["Usuario"].values:
-                                st.error("⚠️ Este login já existe.")
-                            else:
-                                if salvar_usuario(novo_usr, nova_senha, novo_nome, novo_perfil):
-                                    usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
-                                    registrar_log(usuario_responsavel, "Criação de Usuário", f"Criado usuário {novo_usr} ({novo_perfil})")
-                                    st.success(f"✅ Usuário **{novo_usr}** criado!")
-                                    st.rerun()
-                        else:
-                            st.error("⚠️ Preencha todos os campos.")
-
-            # 2. EDITAR PERFIL DO USUÁRIO
-            with col_alterar:
-                st.markdown("#### 🔄 Alterar Perfil")
-                if not df_usrs_atual.empty:
-                    usr_edit = st.selectbox("Selecione o Usuário", df_usrs_atual["Usuario"].tolist(), key="select_edit_usr")
-                    
-                    perfil_atual = df_usrs_atual[df_usrs_atual["Usuario"] == usr_edit]["Perfil"].values[0]
-                    st.info(f"Perfil Atual: **{perfil_atual}**")
-                    
-                    novo_perfil_sel = st.selectbox("Novo Perfil", OPCOES_PERFIL, key="select_novo_perfil")
-                    
-                    if st.button("✏️ Atualizar Perfil", use_container_width=True):
-                        if atualizar_perfil_usuario(usr_edit, novo_perfil_sel):
-                            st.success(f"Perfil de **{usr_edit}** alterado para **{novo_perfil_sel}**!")
-                            st.rerun()
-                else:
-                    st.caption("Nenhum usuário disponível para edição.")
-
-            # 3. LISTAR E REMOVER USUÁRIOS
-            with col_lista:
-                st.markdown("#### 📋 Usuários Ativos")
-                if not df_usrs_atual.empty:
-                    st.dataframe(df_usrs_atual[["Nome", "Usuario", "Perfil"]], use_container_width=True, hide_index=True, height=250)
-                    
-                    st.markdown("---")
-                    st.markdown("#### 🗑️ Remover Usuário")
-                    usuarios_removiveis = [u for u in df_usrs_atual["Usuario"].tolist() if u != "admin"]
-                    if usuarios_removiveis:
-                        usr_remover = st.selectbox("Selecione para remover", usuarios_removiveis, key="select_rem_usr")
-                        if st.button("❌ Confirmar Remoção", use_container_width=True):
-                            if remover_usuario(usr_remover):
-                                st.success(f"Usuário **{usr_remover}** removido!")
+                            if salvar_usuario(novo_usr, nova_senha, novo_nome, novo_perfil):
+                                registrar_log(f"{usr['Nome']} ({usr['Usuario']})", "Cadastro de Usuário", f"Criou o usuário {novo_usr} ({novo_perfil})")
+                                st.success(f"Usuário {novo_usr} criado!")
                                 st.rerun()
-                    else:
-                        st.caption("Sem usuários secundários para remoção.")
-                else:
-                    st.info("Nenhum usuário cadastrado no banco.")
+                        else:
+                            st.error("Preencha todos os campos obrigatórios.")
 
-            # ---------------------------------------------------------
-            # IMPORTAÇÃO EM LOTE DE USUÁRIOS (NOVO RECURSO)
-            # ---------------------------------------------------------
-            st.markdown("---")
-            st.subheader("📥 Importação de Usuários em Lote")
-
-            col_u1, col_u2 = st.columns(2, gap="medium")
-
-            with col_u1:
-                st.markdown("""
-                <div class="import-card">
-                    <div>
-                        <span class="step-badge">Passo 1</span>
-                        <div class="card-header-title">📄 Modelo de Usuários</div>
-                        <div class="card-description">
-                            Baixe o modelo com as colunas: <b>Nome, Usuario, Senha, Perfil</b>.
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                
+            with st.expander("📥 Importar Usuários em Lote"):
                 st.download_button(
-                    label="📥 Baixar Planilha Modelo de Usuários (.xlsx)",
+                    label="📄 Baixar Modelo de Usuários (.xlsx)",
                     data=gerar_planilha_modelo_usuarios(),
-                    file_name="modelo_importacao_usuarios.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
+                    file_name="modelo_usuarios.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+                file_usr = st.file_uploader("Enviar Planilha de Usuários", type=["xlsx", "csv"], key="upload_usr")
+                if file_usr:
+                    try:
+                        df_u_up = pd.read_csv(file_usr) if file_usr.name.endswith('.csv') else pd.read_excel(file_usr)
+                        st.dataframe(df_u_up, use_container_width=True)
+                        if st.button("🚀 Confirmar Importação de Usuários"):
+                            if salvar_usuarios_em_lote(df_u_up, f"{usr['Nome']} ({usr['Usuario']})"):
+                                st.success("Usuários importados com sucesso!")
+                                st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao processar arquivo: {e}")
 
-            with col_u2:
-                st.markdown("""
-                <div class="import-card">
-                    <div>
-                        <span class="step-badge" style="background-color: #d1fae5; color: #059669;">Passo 2</span>
-                        <div class="card-header-title">📤 Upload da Planilha de Usuários</div>
-                        <div class="card-description">
-                            Envie a planilha preenchida (.XLSX ou .CSV) para cadastrar os novos usuários.
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                arquivo_usr = st.file_uploader("Selecione o arquivo de usuários", type=["xlsx", "csv"], key="uploader_usr_lote", label_visibility="collapsed")
-
-            if arquivo_usr is not None:
-                try:
-                    df_usr_upload = pd.read_csv(arquivo_usr) if arquivo_usr.name.endswith('.csv') else pd.read_excel(arquivo_usr)
-                    st.success(f"✅ **Arquivo de usuários carregado!** Foram encontrados **{len(df_usr_upload)}** registros.")
+            with st.expander("🗑️ Remover ou Editar Usuário"):
+                if not df_usuarios.empty:
+                    lista_usrs = df_usuarios["Usuario"].tolist()
+                    usr_selecionado = st.selectbox("Selecione o Usuário", options=lista_usrs)
                     
-                    with st.expander("🔍 Pré-visualizar Usuários para Importação", expanded=True):
-                        st.dataframe(df_usr_upload, use_container_width=True, height=200)
-                    
-                    if st.button("🚀 Cadastrar Todos os Usuários no Banco", use_container_width=True):
-                        usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
-                        if salvar_usuarios_em_lote(df_usr_upload, usuario_responsavel):
-                            st.balloons()
-                            st.success(f"🎉 **{len(df_usr_upload)} usuários** foram importados com sucesso!")
-                            st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Erro ao processar arquivo de usuários: {e}")
+                    c_ed1, c_ed2 = st.columns(2)
+                    with c_ed1:
+                        novo_p_edit = st.selectbox("Novo Perfil", options=OPCOES_PERFIL, key="edit_perfil")
+                        if st.button("✏️ Atualizar Perfil"):
+                            if atualizar_perfil_usuario(usr_selecionado, novo_p_edit):
+                                registrar_log(f"{usr['Nome']} ({usr['Usuario']})", "Alteração de Perfil", f"Alterou perfil de {usr_selecionado} para {novo_p_edit}")
+                                st.success("Perfil atualizado!")
+                                st.rerun()
+                    with c_ed2:
+                        if st.button("❌ Excluir Usuário", type="primary"):
+                            if remover_usuario(usr_selecionado):
+                                registrar_log(f"{usr['Nome']} ({usr['Usuario']})", "Exclusão de Usuário", f"Removeu o usuário {usr_selecionado}")
+                                st.success("Usuário removido!")
+                                st.rerun()
