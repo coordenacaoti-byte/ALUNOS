@@ -130,7 +130,6 @@ def carregar_logs(data_inicio=None, data_fim=None):
             }
             df_logs = df_logs.rename(columns=renames)
             if "Data/Hora" in df_logs.columns:
-                # Converte os timestamps do banco para o fuso local de Pernambuco
                 df_logs["Data/Hora"] = (
                     pd.to_datetime(df_logs["Data/Hora"], errors='coerce')
                     .dt.tz_convert('America/Recife')
@@ -228,6 +227,7 @@ def gerar_pdf_logs_bytes(df_logs, data_ini, data_fim, usuario_solicitante):
 # FUNÇÕES DA BASE DE ALUNOS
 # ---------------------------------------------------------
 def carregar_alunos():
+    """Carrega apenas as colunas amigáveis ao usuário final, descartando metadados do banco."""
     try:
         response = supabase.table("alunos").select("*").execute()
         df = pd.DataFrame(response.data)
@@ -243,13 +243,17 @@ def carregar_alunos():
             }
             if "endereco" in df.columns:
                 renames["endereco"] = "Endereço"
+                
             df = df.rename(columns=renames)
             
             if "Data Nasc." in df.columns:
                 df["Data Nasc."] = pd.to_datetime(df["Data Nasc."], errors='coerce').dt.strftime('%d/%m/%Y')
+
+            cols_desejadas = ["Nome", "CPF", "Data Nasc.", "Tipo de Busca", "Escola Origem", "Turma", "Endereço", "Observações"]
+            cols_finais = [c for c in cols_desejadas if c in df.columns]
+            return df[cols_finais]
         else:
-            df = pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Tipo de Busca", "Escola Origem", "Turma", "Endereço", "Observações"])
-        return df
+            return pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Tipo de Busca", "Escola Origem", "Turma", "Endereço", "Observações"])
     except Exception as e:
         st.error(f"Erro ao carregar alunos: {e}")
         return pd.DataFrame(columns=["Nome", "CPF", "Data Nasc.", "Tipo de Busca", "Escola Origem", "Turma", "Endereço", "Observações"])
@@ -279,23 +283,28 @@ def salvar_aluno(nome, cpf, data_nasc, tipo_busca, escola_origem, turma, enderec
 def salvar_alunos_em_lote(df_lote, usuario_logado):
     try:
         total_registros = len(df_lote)
-        renames = {
+        
+        mapa_colunas = {
             "Nome": "nome",
             "CPF": "cpf",
             "Data Nasc.": "data_nasc",
             "Tipo de Busca": "tipo_busca",
             "Escola Origem": "escola_origem",
             "Turma": "turma",
-            "Observações": "observacoes"
+            "Endereço": "endereco",
+            "Endereco": "endereco",
+            "Observações": "observacoes",
+            "Observacoes": "observacoes"
         }
-        if "Endereço" in df_lote.columns:
-            renames["Endereço"] = "endereco"
-        elif "Endereco" in df_lote.columns:
-            renames["Endereco"] = "endereco"
-            
-        df_lote = df_lote.rename(columns=renames)
+        
+        df_lote = df_lote.rename(columns=mapa_colunas)
+        
+        colunas_validas = ["nome", "cpf", "data_nasc", "tipo_busca", "escola_origem", "turma", "endereco", "observacoes"]
+        cols_presentes = [c for c in colunas_validas if c in df_lote.columns]
+        df_lote = df_lote[cols_presentes]
+
         if "data_nasc" in df_lote.columns:
-            df_lote["data_nasc"] = df_lote["data_nasc"].astype(str)
+            df_lote["data_nasc"] = pd.to_datetime(df_lote["data_nasc"], errors='coerce').dt.strftime('%Y-%m-%d')
             
         df_lote["created_at"] = obter_iso_atual()
         registros = df_lote.fillna("").to_dict(orient="records")
@@ -721,11 +730,13 @@ else:
             total_alunos = len(df)
             escolas_ativas = df["Escola Origem"].nunique() if not df.empty and "Escola Origem" in df.columns else 0
             
+            # Cálculo de idade feito em DataFrame auxiliar para evitar alteração da exibição da tabela original
             if not df.empty and "Data Nasc." in df.columns:
-                df['Data_dt'] = pd.to_datetime(df['Data Nasc.'], format='%d/%m/%Y', errors='coerce')
+                df_calc = df.copy()
+                df_calc['Data_dt'] = pd.to_datetime(df_calc['Data Nasc.'], format='%d/%m/%Y', errors='coerce')
                 ano_atual = datetime.now(FUSO_RECIFE).year
-                df['Idade'] = ano_atual - df['Data_dt'].dt.year
-                media_idade = round(df['Idade'].mean(), 1) if not df['Idade'].isna().all() else 0.0
+                df_calc['Idade'] = ano_atual - df_calc['Data_dt'].dt.year
+                media_idade = round(df_calc['Idade'].mean(), 1) if not df_calc['Idade'].isna().all() else 0.0
             else:
                 media_idade = 0.0
 
@@ -945,3 +956,15 @@ else:
                                 registrar_log(f"{usr['Nome']} ({usr['Usuario']})", "Exclusão de Usuário", f"Removeu o usuário {usr_selecionado}")
                                 st.success("Usuário removido!")
                                 st.rerun()
+
+            st.markdown("---")
+            st.subheader("🧹 Limpeza do Banco de Dados")
+            with st.expander("⚠️ Zerar Base de Alunos"):
+                st.warning("Esta ação apaga permanentemente todos os cadastros de alunos.")
+                confirmar_del_alunos = st.checkbox("Estou ciente de que os dados serão deletados.")
+                if st.button("🗑️ Deletar Todos os Alunos", disabled=not confirmar_del_alunos):
+                    df_atual = carregar_alunos()
+                    qtd = len(df_atual)
+                    if limpar_tabela_alunos(f"{usr['Nome']} ({usr['Usuario']})", qtd):
+                        st.success("Base de alunos zerada com sucesso!")
+                        st.rerun()
