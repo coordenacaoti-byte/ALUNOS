@@ -227,7 +227,7 @@ def gerar_pdf_logs_bytes(df_logs, data_ini, data_fim, usuario_solicitante):
 # FUNÇÕES DA BASE DE ALUNOS
 # ---------------------------------------------------------
 def carregar_alunos():
-    """Carrega apenas as colunas amigáveis ao usuário final, descartando metadados do banco."""
+    """Carrega as colunas da tabela e faz a conversão flexível da data de nascimento."""
     try:
         response = supabase.table("alunos").select("*").execute()
         df = pd.DataFrame(response.data)
@@ -246,8 +246,10 @@ def carregar_alunos():
                 
             df = df.rename(columns=renames)
             
+            # Conversão robusta aceitando múltiplos formatos de data
             if "Data Nasc." in df.columns:
-                df["Data Nasc."] = pd.to_datetime(df["Data Nasc."], errors='coerce').dt.strftime('%d/%m/%Y')
+                data_parsed = pd.to_datetime(df["Data Nasc."], format='mixed', errors='coerce')
+                df["Data Nasc."] = data_parsed.dt.strftime('%d/%m/%Y').fillna('-')
 
             cols_desejadas = ["Nome", "CPF", "Data Nasc.", "Tipo de Busca", "Escola Origem", "Turma", "Endereço", "Observações"]
             cols_finais = [c for c in cols_desejadas if c in df.columns]
@@ -474,6 +476,17 @@ st.markdown("""
         object-fit: contain;
         display: block;
         margin: 0 auto 15px auto;
+    }
+
+    /* Estilo do Rodapé */
+    .footer {
+        margin-top: 50px;
+        padding: 20px;
+        border-top: 1px solid #e2e8f0;
+        text-align: center;
+        font-size: 0.85rem;
+        color: #64748b;
+        line-height: 1.5;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -968,3 +981,14 @@ else:
                     if limpar_tabela_alunos(f"{usr['Nome']} ({usr['Usuario']})", qtd):
                         st.success("Base de alunos zerada com sucesso!")
                         st.rerun()
+
+# ---------------------------------------------------------
+# RODAPÉ INSTITUCIONAL
+# ---------------------------------------------------------
+st.markdown("""
+    <div class="footer">
+        © 2026 Secretaria de Educação e Inovação Pedagógica de Goiana - PE<br>
+        <strong>Desenvolvimento:</strong> Coordenação de Tecnologia<br>
+        Todos os direitos reservados.
+    </div>
+""", unsafe_allow_html=True)
