@@ -327,6 +327,13 @@ def limpar_tabela_alunos(usuario_logado, quantidade_deletada):
         st.error(f"Erro ao limpar banco de dados de alunos: {e}")
         return False
 
+# Função para exportar DataFrame para Excel
+def gerar_excel_bytes(df):
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Base_Alunos')
+    return buffer.getvalue()
+
 # ---------------------------------------------------------
 # FUNÇÕES DE USUÁRIOS
 # ---------------------------------------------------------
@@ -833,6 +840,55 @@ else:
             st.subheader("📊 Tabela Completa de Alunos Cadastrados")
             st.dataframe(df, use_container_width=True)
 
+            # ---------------------------------------------------------
+            # AÇÕES DA TABELA: EXPORTAÇÃO E EXCLUSÃO (2 ETAPAS)
+            # ---------------------------------------------------------
+            if not df.empty:
+                col_actions = st.columns(2 if perfil == "Administrador" else 1)
+                
+                # Botão de Exportação para Administrador e Gestor/Visualizador
+                with col_actions[0]:
+                    excel_data = gerar_excel_bytes(df)
+                    st.download_button(
+                        label="📥 Baixar Base Completa de Alunos (.xlsx)",
+                        data=excel_data,
+                        file_name=f"base_alunos_{datetime.now(FUSO_RECIFE).strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+
+                # Exclusão em 2 Etapas apenas para o Administrador
+                if perfil == "Administrador":
+                    with col_actions[1]:
+                        with st.expander("🗑️ Excluir Toda a Base de Alunos"):
+                            st.error("⚠️ **ATENÇÃO:** Esta ação é irreversível e excluirá todos os registros do banco de dados!")
+                            
+                            # Etapa 1: Checkbox de confirmação
+                            confirmacao_etapa1 = st.checkbox("Etapa 1: Entendo os riscos e quero prosseguir", key="chk_etapa1")
+                            
+                            # Etapa 2: Digitação do texto de confirmação
+                            if confirmacao_etapa1:
+                                confirmacao_texto = st.text_input(
+                                    "Etapa 2: Digite 'DELETAR' em maiúsculas para confirmar:",
+                                    key="txt_deletar"
+                                )
+                                
+                                btn_confirmar_deletar = st.button(
+                                    "💥 Confirmar Exclusão Permanente",
+                                    type="primary",
+                                    use_container_width=True
+                                )
+                                
+                                if btn_confirmar_deletar:
+                                    if confirmacao_texto.strip() == "DELETAR":
+                                        qtd_alunos = len(df)
+                                        usuario_responsavel = f"{usr['Nome']} ({usr['Usuario']})"
+                                        if limpar_tabela_alunos(usuario_responsavel, qtd_alunos):
+                                            st.success("✅ Toda a base de alunos foi excluída com sucesso!")
+                                            st.rerun()
+                                    else:
+                                        st.error("❌ Texto de confirmação incorreto. Digite exatamente a palavra **DELETAR**.")
+
             # SESSÃO DE LOGS E AUDITORIA
             st.markdown("---")
             st.subheader("🛡️ Histórico e Logs de Auditoria do Sistema")
@@ -969,18 +1025,6 @@ else:
                                 registrar_log(f"{usr['Nome']} ({usr['Usuario']})", "Exclusão de Usuário", f"Removeu o usuário {usr_selecionado}")
                                 st.success("Usuário removido!")
                                 st.rerun()
-
-            st.markdown("---")
-            st.subheader("🧹 Limpeza do Banco de Dados")
-            with st.expander("⚠️ Zerar Base de Alunos"):
-                st.warning("Esta ação apaga permanentemente todos os cadastros de alunos.")
-                confirmar_del_alunos = st.checkbox("Estou ciente de que os dados serão deletados.")
-                if st.button("🗑️ Deletar Todos os Alunos", disabled=not confirmar_del_alunos):
-                    df_atual = carregar_alunos()
-                    qtd = len(df_atual)
-                    if limpar_tabela_alunos(f"{usr['Nome']} ({usr['Usuario']})", qtd):
-                        st.success("Base de alunos zerada com sucesso!")
-                        st.rerun()
 
 # ---------------------------------------------------------
 # RODAPÉ INSTITUCIONAL
